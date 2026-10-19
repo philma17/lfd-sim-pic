@@ -1,0 +1,80 @@
+# Passive Interaction Control with Dynamical Systems (PIC-DS), first prototype: FR3, MuJoCo,
+# 3D position task, LASA/Sine. Nothing here is tuned. Every value has a source tag:
+#   [BASE]  copied unchanged from lfd_baseline/configs/dynamic_baseline.yaml (commit a06ed55)
+#   [PAPER] Kronander & Billard, RA-L 2016, Sec. IV-A / Appendix A
+#   [REPO]  github.com/epfl-lasa/passive-ds-control (src/passive_ds_controller.cpp)
+#   [CHOSEN-UNVALIDATED] no source found; reasoned start value, must be validated (README)
+
+shape: Sine                  # [BASE]
+dataset: LASA                # [BASE]
+model_source: pth            # [BASE] S2NNDS/models_verified/LASA/Sine/model_f.pth (read-only)
+time_rate: demo              # [BASE] v_peak / L = vs / ps from the LASA data
+
+robot: FR3                   # first step: FR3 only (UR5e deliberately not supported here)
+
+sim:                         # [BASE] identical to the baseline single-start cell
+  dt: 0.002                  # controller period; must equal model.opt.timestep (checked)
+  T_max: 10.0                # simulation duration [s]                       (baseline value)
+  success_frac: 0.01         # convergence: |p(T_max) - goal| < success_frac * L  (baseline: 1 % L)
+  k_perp: 5.0                # out-of-plane correction of the planar DS [1/s] (as in sim.py)
+  k_rot: 5.0                 # unused in pos mode, kept so SimParams matches the baseline
+  n_starts: 32
+  seed: 0
+  start_criterion: max_sigma_margin
+  start_min_margin_pct: 5.0
+  ik: {eps: 0.02, lam_max: 0.05, k_null: 0.0}
+
+task:                        # [BASE] 3D position task: planar DS in the horizontal plane, pos mode
+  mode: pos
+  plane: {e1: [1.0, 0.0, 0.0], e2: [0.0, 1.0, 0.0]}
+  center: [0.50, 0.0, 0.50]  # DS goal (x_n = 0) in world [m]
+  anchor: [0.0, 0.0]
+  L_m: 0.10                  # metres per normalized unit
+  start: demo_mean           # x0 = mean demonstration start (sc.x0_n), as dynamic_baseline.py
+
+plant:
+  # Scales model.dof_frictionloss in memory (MJCF untouched). 1.0 = unmodified Menagerie FR3
+  # (Coulomb friction 1.137 / 0.763 / 0.44 / 0.248 Nm), the plant of the baseline. With 1.0 and
+  # the paper gains the arm does not leave the start (stiction, see README). 0.0 is a
+  # DIAGNOSTIC plant used to separate controller behaviour from stiction; it is not the baseline.
+  dof_frictionloss_scale: 1.0
+
+pic:
+  decomposition: none        # f_C = 0, f_R = f. Valid choice per paper Sec. III-D. "linear" and
+                             # "lyapunov" are NOT implemented in this step (raise an error).
+  # Damping eigenvalues [lambda1 (along f), lambda2, lambda3] in N s/m.
+  lambda: [20.0, 200.0, 200.0]   # [PAPER] Sec. IV-A (Kuka experiment). Not validated for the
+                                 # Menagerie FR3: see README "Gains and friction".
+  s_max: 10.0                # [PAPER] Sec. IV-A, s_bar = 10 (energy in J, see README)
+  s0: 5.0                    # DEVIATION from [PAPER] Sec. IV-A (s(0) = 10 = s_bar as far as the
+                             # PDF text shows). Theorem 1 only needs 0 < s(0) <= s_bar. With
+                             # decomposition "none" and a full tank, Eq. 28 gives beta_R(0, s_bar)
+                             # = 0 and the arm cannot leave rest (measured, README + test). So
+                             # s(0) is placed below the upper transition band [s_bar - delta_s,
+                             # s_bar]. 10.0 reproduces the deadlock.
+  delta_s_frac: 0.1          # [PAPER] Appendix A: delta_s = 0.1 * s_bar. Must be <= 0.5
+  delta_z: 0.01              # [PAPER] Appendix A: delta_z = 0.01 [(m/s)^2 since z = xdot . f_R]
+  eta: 1.0e-6                # [REPO] MINSPEED in passive_ds_controller.h (paper: "small eta")
+  step: quintic              # [PAPER] Eq. 25 quintic smooth step. "cosine" = repo variant
+  null_space:
+    enabled: true            # blocked automatically if the null space of Jp is empty
+    d_q: 5.0                 # [CHOSEN-UNVALIDATED] Nms/rad, joint damping projected on null(Jp).
+                             # Paper gives no null-space term. Orthogonal projector I - J+ J.
+  torque_limit:
+    source: documented       # FR3 87/12 Nm from sim_dynamic.TAU_MAX_DOC (franka_description)
+    clip: true               # clip manually; clipped and unclipped torques are logged separately
+
+disturbance:                 # [CHOSEN-UNVALIDATED] external force pulse on the TCP (world frame)
+  enabled: true
+  # force [N] held for duration [s] starting at t_start [s]: impulse = |F| * duration.
+  # |F| = 5 N, 0.05 s -> 0.25 N s. With lambda1 = 20 N s/m that is a TCP displacement of up
+  # to ~12 mm along the motion direction (impulse / lambda1), ~1 mm perpendicular
+  # (impulse / lambda2), i.e. up to ~0.12 normalized units. Small enough to stay near the region
+  # where the learned DS is meaningful, large enough to be visible against the 1 mm criterion.
+  pulses:
+    - {t_start_s: 1.0, duration_s: 0.05, force_N: [0.0, 3.0, 4.0]}
+
+validation:                  # thresholds used by tests/ and the experiment report
+  tank_tol_J: 1.0e-9         # allowed excursion of s outside [0, s_max] before clamping
+  ke_increase_tol_J: 1.0e-6  # allowed per-step KE increase in the no-f energy test
+  no_f_v0_m_s: 0.2           # [CHOSEN] initial TCP speed for the no-f energy decay test

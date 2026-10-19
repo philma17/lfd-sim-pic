@@ -1,0 +1,13 @@
+Vendored verbatim from /home/philipp/lfd_baseline/common (reference, never modified).
+Baseline commit: a06ed55463047b9b9c42ff3e0c8075a90d34c999 (branch dynamic-baseline)
+Copied on: 2026-10-19T16:57:39Z
+Do not edit these files. tests/test_provenance.py checks the hashes below.
+
+e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  __init__.py
+394666978c8488e40025b58d97f49b1c0df759bff03658ee7233f44ae4ae51e8  ds.py
+97f4bb3603eda1a8712fe687c0aa0922742d56d281bebd5cece1dfa1150de18e  ik.py
+767ed96b444ecc67350bea7a6c0e0ed53b93c2cfa9be368ca17b8fa9c43b6df6  metrics.py
+04bea23fc8fe5e85fee855d8deb371664042f2617145670e789fb90b4d42f580  robots.py
+4529c9438d79373bf2efd1afbf97fdd22da6b305565257362286a1074e3325aa  scenario.py
+3846c95280daabbc4d000fc4604bb5c0de7ba0519664f70c9faa17aa8a896af6  sim.py
+20c31a21ae87573b35834006f074ee035a69f7d333ab333a68f748bab053eb9b  sim_dynamic.py
