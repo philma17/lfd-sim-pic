@@ -14,10 +14,11 @@ import numpy as np
 
 MENAGERIE_DIR = os.environ.get(
     "MENAGERIE_DIR",
-    os.path.expanduser("~/.cache/robot_descriptions/mujoco_menagerie"),
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                 "vendor", "mujoco_menagerie"),
 )
-# Commit des lokalen Menagerie-Checkouts zum Zeitpunkt von Phase 0
-MENAGERIE_COMMIT = "d7b481bac63d3d600ab404ee74f7474c5efe8a67"
+# Commit des eingebetteten Menagerie-Modells
+MENAGERIE_COMMIT = "cda5236f98383f6fbaa4820c6b18dba892cd087f"
 
 
 @dataclass(frozen=True)

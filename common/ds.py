@@ -18,7 +18,10 @@ import numpy as np
 import onnx
 from onnx import numpy_helper
 
-S2NNDS_DIR = os.environ.get("S2NNDS_DIR", "/home/philipp/S2NNDS")
+S2NNDS_DIR = os.environ.get(
+    "S2NNDS_DIR",
+    os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "vendor", "S2NNDS"),
+)
 
 # LASA-Shape -> Attributname in pyLasaDataset (wie in S2NNDS/main.py)
 LASA_DATASET = {

@@ -4,8 +4,10 @@ First prototype of Passive Interaction Control with Dynamical Systems (PIC-DS, K
 RA-L 2016) as an execution mode in MuJoCo: **FR3 only, 3D TCP position task, LASA/Sine**, compared
 with the baseline joint position servo. No UR5e, no orientation control, no sweeps, no multistart.
 
-`/home/philipp/lfd_baseline` is only a reference (commit `a06ed55`, never modified). S2NNDS
-(`~/S2NNDS`, read-only) and `~/lfd_env` are reused, not copied. No git repo, branch or worktree here.
+`/home/philipp/lfd_baseline` is only a reference (commit `a06ed55`, never modified).
+The required S2NNDS `Sine` model and the FR3 MuJoCo-Menagerie model are included
+under `vendor/`. The upstream source repositories and revisions are documented
+in the corresponding vendor directories.
 
 ## Files
 
@@ -23,6 +25,131 @@ Run (`-B` and `sys.dont_write_bytecode` keep `__pycache__` out of the tree):
     cd ~/lfd_sim_pic
     ~/lfd_env/bin/python -B -m unittest discover -s tests -v     # ~40 s
     ~/lfd_env/bin/python -B experiments/run_pic.py                # ~1 min
+
+## Bedienung im GitHub Codespace
+
+### 1. Virtuelle Umgebung anlegen und aktivieren
+
+Im Terminal des Codespaces:
+
+    cd /workspaces/lfd-sim-pic
+    python3 -m venv .venv
+    source .venv/bin/activate
+    python -m pip install --upgrade pip
+    python -m pip install -r requirements.txt
+
+Die virtuelle Umgebung muss pro Codespace normalerweise nur **einmal angelegt**
+werden. Nach einem Neustart oder bei einer neuen Terminal-Sitzung muss sie aber
+wieder aktiviert werden:
+
+    cd /workspaces/lfd-sim-pic
+    source .venv/bin/activate
+
+Man erkennt eine aktive Umgebung meistens am Präfix `(.venv)` in der
+Shell-Eingabe. Die Umgebung selbst ist kein Python-Paket und gehört deshalb
+nicht in `requirements.txt`. `requirements.txt` beschreibt nur die Pakete,
+die innerhalb der Umgebung installiert werden sollen.
+
+### 2. Enthaltene Modelle und externe Daten
+
+Die für die aktuelle Konfiguration benötigten Dateien sind bereits enthalten:
+
+* `vendor/S2NNDS/NNModels.py`
+* `vendor/S2NNDS/models_verified/LASA/Sine/model_f.pth`
+* `vendor/mujoco_menagerie/franka_fr3/` inklusive Mesh-Assets und Lizenzdatei
+
+Die S2NNDS-Dateien stammen aus
+`https://github.com/allemmbinn/S2NNDS` (Revision
+`3636a91d3d52a960d8f2f6f31da7b89f43e58602`).
+Das FR3-Modell stammt aus
+`https://github.com/google-deepmind/mujoco_menagerie` (Revision
+`cda5236f98383f6fbaa4820c6b18dba892cd087f`).
+Die Dateien wurden mit Erlaubnis des S2NNDS-Projektinhabers übernommen.
+
+Zusätzlich wird das Python-Paket `pyLasaDataset` installiert. Es stellt die
+LASA-Demonstrationsdaten bereit, die zur Normierung des Sine-Modells benötigt
+werden. Ein eigener Download der beiden Modell-Repositories ist nicht mehr
+nötig.
+
+Die Pfade können bei Bedarf weiterhin überschrieben werden:
+
+    export MENAGERIE_DIR="$PWD/vendor/mujoco_menagerie"
+    export S2NNDS_DIR="$PWD/vendor/S2NNDS"
+
+### 3. Tests ausführen
+
+Mit aktivierter Umgebung:
+
+    python -B -m unittest discover -s tests -v
+
+Die Tests prüfen unter anderem die PIC-Kopplungsfunktionen, den Energie-Tank,
+die Nullraum-Projektion und die MuJoCo-Simulation.
+
+### 4. Experiment ausführen
+
+Der vollständige Vergleich von Servo, PIC-DS und PIC-DS mit Kraftpuls wird
+gestartet mit:
+
+    python -B experiments/run_pic.py
+
+Nützliche Varianten:
+
+    python -B experiments/run_pic.py --friction-scales 1.0
+    python -B experiments/run_pic.py --friction-scales 0.0
+    python -B experiments/run_pic.py --no-figure
+
+Die Ergebnisse werden in `results/pic/metrics.json` und als komprimierte
+Trajektorien in `results/pic/` gespeichert. Die Abbildung wird als
+`figures/pic/fig_overview.png` erzeugt.
+
+`--friction-scales 0.0` ist die diagnostische, reibungsfreie Variante. Mit
+dem unveränderten FR3-Reibungsmodell kann PIC-DS bei den aktuellen
+Papierparametern wegen Haftreibung am Start stehen bleiben; dieses Verhalten
+ist im Abschnitt „Gains and friction“ weiter unten dokumentiert.
+
+### Was ist eine virtuelle Python-Umgebung?
+
+Eine virtuelle Umgebung ist ein eigenes, vom System-Python getrenntes
+Verzeichnis mit einem Python-Interpreter und den für dieses Projekt
+installierten Paketen. Dadurch bleiben beispielsweise die Versionen von
+`numpy`, `mujoco` und `torch` dieses Projekts getrennt von anderen Projekten
+im Codespace. Das verhindert Versionskonflikte und macht die Installation
+reproduzierbarer.
+
+`requirements.txt` ist dabei lediglich eine Paketliste. Der typische Ablauf
+ist:
+
+1. Umgebung einmalig mit `python3 -m venv .venv` erstellen.
+2. Nach jeder neuen Shell-Sitzung mit `source .venv/bin/activate` aktivieren.
+3. Pakete einmalig mit `python -m pip install -r requirements.txt` installieren.
+4. Danach Tests und Experimente mit `python ...` ausführen.
+
+Wenn der Codespace gelöscht und neu erstellt wird, ist auch `.venv` weg und
+der Installationsschritt muss wiederholt werden. Wird derselbe Codespace nur
+neu geöffnet, bleibt `.venv` normalerweise erhalten.
+
+### Fehlersuche
+
+Wenn beim Aktivieren
+
+    bash: .venv/bin/activate: No such file or directory
+
+erscheint, wurde die virtuelle Umgebung in diesem Codespace noch nicht
+angelegt. Dann einmalig aus dem Repository-Hauptverzeichnis ausführen:
+
+    python3 -m venv .venv
+    source .venv/bin/activate
+    python -m pip install -r requirements.txt
+
+Wenn `pip` stattdessen Meldungen wie `Requirement already satisfied` ausgibt,
+wurden die Pakete bereits im globalen Codespace-Python installiert. Das ist
+funktional ausreichend; die virtuelle Umgebung bleibt trotzdem empfehlenswert,
+damit die Projektabhängigkeiten isoliert sind.
+
+Die vendorte S2NNDS-Modelldatei ist ein PyTorch-Modell. Die mitgelieferte
+`vendor/S2NNDS/NNModels.py` enthält deshalb die für das Laden des Modells
+notwendigen Torch-Klassen direkt. Ein zusätzlicher S2NNDS-Checkout oder ein
+manuelles `PYTHONPATH`-Setup ist nicht erforderlich.
 
 ## Control law as implemented (checked against the paper PDF and the reference repo)
 

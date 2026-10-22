@@ -1,0 +1,13 @@
+# Numerical computing and plotting
+numpy
+scipy
+matplotlib
+
+# Configuration and simulation
+PyYAML
+mujoco
+
+# Loading the learned S2NNDS model
+onnx
+torch
+pyLasaDataset

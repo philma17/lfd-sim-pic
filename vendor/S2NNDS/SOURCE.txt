@@ -1,0 +1,13 @@
+Source: https://github.com/allemmbinn/S2NNDS
+Revision: 3636a91d3d52a960d8f2f6f31da7b89f43e58602
+
+Included files:
+- NNModels.py
+- models_verified/LASA/Sine/model_f.pth
+
+These files are included with permission from the S2NNDS project owner.
+
+NNModels.py is adapted only to replace the upstream wildcard import from
+common_header.py with the torch imports needed to unpickle and evaluate the
+included dynamics model. This avoids importing S2NNDS training-only GUI and
+experiment dependencies.
