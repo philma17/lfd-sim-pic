@@ -1,0 +1,13 @@
+# BASE CONDITION (decided in results/summary/stall_diagnosis.md): friction x0 (DIAGNOSTIC plant), paper gains
+# lambda=(20,200,200), s0=5 J, null-space damping 5 Nms/rad, LASA/Sine, demo_mean start, seed 0.
+# Robot and orientation are chosen on the command line: --set robot=UR5e --set task.orientation=hold
+# Variation 1: x_dot = alpha f(x). T_max 20 s for every alpha (alpha = 0.5 needs ~12 s).
+extends: picds.yaml
+sim: {T_max: 20.0}
+plant: {dof_frictionloss_scale: 0.0}
+experiment: {name: var_alpha, controllers: [servo, pic]}
+conditions:
+  - {label: alpha0.5, set: {ds_speed_factor: 0.5}}
+  - {label: alpha1, set: {ds_speed_factor: 1.0}}
+  - {label: alpha2, set: {ds_speed_factor: 2.0}}
+  - {label: alpha4, set: {ds_speed_factor: 4.0}}

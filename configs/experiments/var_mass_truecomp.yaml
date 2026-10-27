@@ -1,0 +1,12 @@
+# BASE CONDITION (decided in results/summary/stall_diagnosis.md): friction x0 (DIAGNOSTIC plant), paper gains
+# lambda=(20,200,200), s0=5 J, null-space damping 5 Nms/rad, LASA/Sine, demo_mean start, seed 0.
+# Robot and orientation are chosen on the command line: --set robot=UR5e --set task.orientation=hold
+# Variation 3a-true: as var_mass, PIC-DS only, gravity compensation with the TRUE (plant) model.
+extends: picds.yaml
+plant: {dof_frictionloss_scale: 0.0}
+experiment: {name: var_mass_truecomp, controllers: [pic]}
+conditions:
+  - {label: mass0.5, set: {plant.mass_scale: 0.5}}
+  - {label: mass1.5, set: {plant.mass_scale: 1.5}}
+  - {label: mass2, set: {plant.mass_scale: 2.0}}
+pic: {gravity_comp: plant}

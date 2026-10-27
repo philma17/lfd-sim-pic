@@ -1,0 +1,12 @@
+# BASE CONDITION (decided in results/summary/stall_diagnosis.md): friction x0 (DIAGNOSTIC plant), paper gains
+# lambda=(20,200,200), s0=5 J, null-space damping 5 Nms/rad, LASA/Sine, demo_mean start, seed 0.
+# Robot and orientation are chosen on the command line: --set robot=UR5e --set task.orientation=hold
+# Variation 3a: all link masses AND inertias scaled (plant). PIC-DS compensation uses the NOMINAL model,
+# so mass_scale != 1 is also a gravity-torque mismatch.
+extends: picds.yaml
+plant: {dof_frictionloss_scale: 0.0}
+experiment: {name: var_mass, controllers: [servo, pic]}
+conditions:
+  - {label: mass0.5, set: {plant.mass_scale: 0.5}}
+  - {label: mass1.5, set: {plant.mass_scale: 1.5}}
+  - {label: mass2, set: {plant.mass_scale: 2.0}}

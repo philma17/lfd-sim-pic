@@ -1,0 +1,12 @@
+# BASE CONDITION (decided in results/summary/stall_diagnosis.md): friction x0 (DIAGNOSTIC plant), paper gains
+# lambda=(20,200,200), s0=5 J, null-space damping 5 Nms/rad, LASA/Sine, demo_mean start, seed 0.
+# Robot and orientation are chosen on the command line: --set robot=UR5e --set task.orientation=hold
+# Variation 2: centre of mass of the LAST link shifted (body-local frame). x = lateral (creates a gravity
+# moment with the tool pointing down), z = along the flange axis. PIC-DS compensates with the NOMINAL model.
+extends: picds.yaml
+plant: {dof_frictionloss_scale: 0.0}
+experiment: {name: var_com, controllers: [servo, pic]}
+conditions:
+  - {label: comx_plus5cm, set: {plant.com_shift: {link: last, dxyz_m: [0.05, 0.0, 0.0]}}}
+  - {label: comx_minus5cm, set: {plant.com_shift: {link: last, dxyz_m: [-0.05, 0.0, 0.0]}}}
+  - {label: comz_plus5cm, set: {plant.com_shift: {link: last, dxyz_m: [0.0, 0.0, 0.05]}}}

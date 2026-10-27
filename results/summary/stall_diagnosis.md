@@ -88,3 +88,18 @@ damping 0.21 for all joints, armature `[0.195 ×4, 0.074 ×3]` in both. The earl
 **Friction x0 (DIAGNOSTIC plant), paper gains λ = (20, 200, 200), s0 = 5 J.** Reason: friction x1 with λ1 ≥ λ1* (stable, 320…1280) did not converge in
 any tested case, so no nominal-friction base condition exists without changing the algorithm or other gains, which was ruled out. All results
 that use this base are diagnostic-plant results and are labelled so; nominal-friction (x1) runs are kept only for the servo and as the documented PIC-DS failure.
+
+---
+
+## Addendum (2026-10-27): UR5e and the gains of the real-robot recordings
+
+**UR5e, same derivation (`experiments/diagnose_stall.py --robot UR5e`, SYNTHETIC friction = same fraction of the torque limit, see `pic/plant.py`) [V]:**
+`λ1* = 414.8` (first joint), start drive/frictionloss ≤ 0.048. λ1 = 20…1280: none converged in 10 s; `T_max = 40 s` with λ1 = 160/320/640/1280: 90.3/172.4/151.4/145.0 mm, none converged; stability ρ_max ≤ 0.73, no clipping. Same pattern as the FR3
+(file `stall_diagnosis_UR5e.json`). Because the UR5e friction is an assumption, this is weaker evidence than the FR3 result. **Base condition for both robots: friction x0, paper gains.**
+
+**Recorded real-robot gains [V, file header]:** the S2NNDS robot recordings (`Robot_Data/2D_Shapes/Five_Obstacle_DS.csv`,
+`robot_demonstrations/3D_Shapes/Recording_Five_Obstacle_DS.csv`) store `eigen_0 / eigen_1 = 150 / 300` and `200 / 400`, `max_tank_level = 100000`,
+`translational_stiffness = [0, 0, 500]`, `rotational_stiffness = [80,80,80]` resp. `[50,50,50]`, `damping_ratio = 1.414`.
+The recorded λ1 (150-200) is of the same order as the predicted FR3 breakaway threshold (≈ 225) and ~10x the paper value 20. **[H]** this is
+why the paper value does not move the simulated arm; it was **not** used to tune anything here (no λ was changed outside the stall sweep). The recorded
+control law and units were not verified to be identical to the implemented one (e.g. the recording also uses a z-stiffness and a huge tank).

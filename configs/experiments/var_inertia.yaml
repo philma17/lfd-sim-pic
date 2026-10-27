@@ -1,0 +1,11 @@
+# BASE CONDITION (decided in results/summary/stall_diagnosis.md): friction x0 (DIAGNOSTIC plant), paper gains
+# lambda=(20,200,200), s0=5 J, null-space damping 5 Nms/rad, LASA/Sine, demo_mean start, seed 0.
+# Robot and orientation are chosen on the command line: --set robot=UR5e --set task.orientation=hold
+# Variation 3b: link inertia tensors only (masses and gravity torques unchanged, so no compensation mismatch).
+extends: picds.yaml
+plant: {dof_frictionloss_scale: 0.0}
+experiment: {name: var_inertia, controllers: [servo, pic]}
+conditions:
+  - {label: inertia0.5, set: {plant.inertia_scale: 0.5}}
+  - {label: inertia1.5, set: {plant.inertia_scale: 1.5}}
+  - {label: inertia2, set: {plant.inertia_scale: 2.0}}

@@ -146,6 +146,8 @@ def standardize(controller: str, res: dict, case, tau_limit: np.ndarray, an: dic
     out["q_min"], out["q_max"] = np.asarray(lo, float), np.asarray(hi, float)
     if "clearance_m" in tr:
         out["clearance_m"] = np.asarray(tr["clearance_m"])
+    elif case.unsafe is not None:                            # servo: same measure, from the stored Xn
+        out["clearance_m"] = case.emb.L * case.unsafe.signed_distance(np.asarray(tr["Xn"]))
     if "qacc" in tr:                                         # direct MuJoCo qacc (PIC-DS runs)
         out["qacc_direct"] = _pad(np.asarray(tr["qacc"])[:N], N)
     out["tcp_vel"] = np.einsum("kij,kj->ki", J, QD)         # exact: J_p(q) qd

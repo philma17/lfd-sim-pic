@@ -1,0 +1,13 @@
+# BASE CONDITION (decided in results/summary/stall_diagnosis.md): friction x0 (DIAGNOSTIC plant), paper gains
+# lambda=(20,200,200), s0=5 J, null-space damping 5 Nms/rad, LASA/Sine, demo_mean start, seed 0.
+# Robot and orientation are chosen on the command line: --set robot=UR5e --set task.orientation=hold
+# Step A: one nominal run per dataset (one start each). T_max: Sine 10 s, Five_Obstacle 20 s
+# (ideal DS needs 11.6 s, baseline rule T_max = 1.5 x t_reach), Cshape_bottom 10 s (ideal 4.3 s).
+# Needs S2NNDS_DIR for the last two (experiments/prepare_s2nnds.py).
+extends: picds.yaml
+plant: {dof_frictionloss_scale: 0.0}
+experiment: {name: dataset_nominal, controllers: [servo, pic]}
+conditions:
+  - {label: LASA_Sine, set: {dataset: LASA, shape: Sine, sim.T_max: 10.0}}
+  - {label: 2D_Five_Obstacle_DS, set: {dataset: 2D_Shapes, shape: Five_Obstacle_DS, sim.T_max: 20.0}}
+  - {label: 3D_Cshape_bottom, set: {dataset: 3D_Shapes, shape: Cshape_bottom, sim.T_max: 10.0}}

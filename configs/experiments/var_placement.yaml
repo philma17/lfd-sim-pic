@@ -1,0 +1,14 @@
+# BASE CONDITION (decided in results/summary/stall_diagnosis.md): friction x0 (DIAGNOSTIC plant), paper gains
+# lambda=(20,200,200), s0=5 J, null-space damping 5 Nms/rad, LASA/Sine, demo_mean start, seed 0.
+# Robot and orientation are chosen on the command line: --set robot=UR5e --set task.orientation=hold
+# Variation 4: attractor placement (goal and DS plane centre) in the z = 0.50 m plane, s = 0, L = 0.10 m.
+# Positions from LfD_baseline results/phase1/runs_clean.csv (kinematic grid r in 0.3..0.8, status OK in pos
+# mode for both robots at L = 0.10): near base r = 0.3, nominal r = 0.5, near full extension r = 0.8.
+# NOTE (kinematic evidence only): in full-pose mode the baseline marks FR3 r = 0.8 as FEHLER_SINGULAER.
+extends: picds.yaml
+plant: {dof_frictionloss_scale: 0.0}
+experiment: {name: var_placement, controllers: [servo, pic]}
+conditions:
+  - {label: r0.3_nearbase, set: {task.center: [0.30, 0.0, 0.50]}}
+  - {label: r0.5_nominal, set: {task.center: [0.50, 0.0, 0.50]}}
+  - {label: r0.8_extended, set: {task.center: [0.80, 0.0, 0.50]}}

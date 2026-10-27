@@ -1,0 +1,39 @@
+variation,level,controller,FR3_none_class,FR3_hold_class,UR5e_none_class,UR5e_hold_class,FR3_none_first_limit,FR3_hold_first_limit,UR5e_none_first_limit,UR5e_hold_first_limit
+alpha,alpha0.5,servo,converged,converged,converged,converged,none,none,none,none
+alpha,alpha0.5,pic,converged,converged,converged,converged,none,none,none,none
+alpha,alpha1,servo,converged,converged,converged,converged,none,none,none,none
+alpha,alpha1,pic,converged,converged,converged,converged,none,none,none,none
+alpha,alpha2,servo,converged,converged,diverged,diverged,none,none,none,none
+alpha,alpha2,pic,converged,converged,converged,converged,none,none,none,none
+alpha,alpha4,servo,diverged,diverged,diverged,diverged,none,none,none,none
+alpha,alpha4,pic,converged,converged,converged,converged,none,none,none,none
+placement,r0.3_nearbase,servo,converged,converged,converged,converged,none,none,none,none
+placement,r0.3_nearbase,pic,converged,converged,converged,converged,none,none,none,none
+placement,r0.5_nominal,servo,converged,converged,converged,converged,none,none,none,none
+placement,r0.5_nominal,pic,converged,converged,converged,converged,none,none,none,none
+placement,r0.8_extended,servo,converged,stalled,converged,converged,none,none,none,none
+placement,r0.8_extended,pic,converged,stalled,converged,slow,none,none,none,none
+"COM, nominal g-comp",comx_plus5cm,servo,converged,converged,converged,converged,none,none,none,none
+"COM, nominal g-comp",comx_plus5cm,pic,slow,converged,stalled,converged,none,none,none,none
+"COM, nominal g-comp",comx_minus5cm,servo,converged,converged,converged,converged,none,none,none,none
+"COM, nominal g-comp",comx_minus5cm,pic,stalled,converged,stalled,converged,none,none,none,none
+"COM, nominal g-comp",comz_plus5cm,servo,converged,converged,converged,converged,none,none,none,none
+"COM, nominal g-comp",comz_plus5cm,pic,stalled,converged,converged,converged,none,none,none,none
+"COM, true g-comp",comx_plus5cm,pic,converged,converged,converged,converged,none,none,none,none
+"COM, true g-comp",comx_minus5cm,pic,converged,converged,converged,converged,none,none,none,none
+"COM, true g-comp",comz_plus5cm,pic,converged,converged,converged,converged,none,none,none,none
+"mass, nominal g-comp",mass0.5,servo,converged,converged,converged,converged,none,none,none,none
+"mass, nominal g-comp",mass0.5,pic,diverged,diverged,diverged,diverged,none,none,none,none
+"mass, nominal g-comp",mass1.5,servo,converged,converged,converged,converged,none,none,none,none
+"mass, nominal g-comp",mass1.5,pic,diverged,diverged,diverged,diverged,joint_position_limit j6 @2.19s,none,none,joint_position_limit j4 @3.96s
+"mass, nominal g-comp",mass2,servo,converged,converged,converged,converged,none,none,none,none
+"mass, nominal g-comp",mass2,pic,diverged,diverged,diverged,diverged,joint_velocity_limit j2 @0.61s,joint_velocity_limit j2 @0.86s,joint_velocity_limit j4 @2.26s,joint_position_limit j2 @1.58s
+"mass, true g-comp",mass0.5,pic,converged,converged,converged,converged,none,none,none,none
+"mass, true g-comp",mass1.5,pic,converged,converged,converged,converged,none,none,none,none
+"mass, true g-comp",mass2,pic,converged,converged,converged,converged,none,none,none,none
+inertia,inertia0.5,servo,converged,converged,converged,converged,none,none,none,none
+inertia,inertia0.5,pic,converged,converged,converged,converged,none,none,none,none
+inertia,inertia1.5,servo,converged,converged,converged,converged,none,none,none,none
+inertia,inertia1.5,pic,converged,converged,converged,converged,none,none,none,none
+inertia,inertia2,servo,converged,converged,converged,converged,none,none,none,none
+inertia,inertia2,pic,converged,converged,converged,converged,none,none,none,none

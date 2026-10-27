@@ -92,18 +92,20 @@ def stability_along(case, res, params, stride=25):
 
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--robot", default="FR3")
     ap.add_argument("--friction", type=float, default=1.0)
     ap.add_argument("--lambda1", type=float, nargs="+", default=[20, 40, 80, 160, 320, 640, 1280])   # 640, 1280: EXTENSION beyond the requested sweep
     ap.add_argument("--out-dir", default=OUT)
     a = ap.parse_args(argv)
 
     cfg = load_config("configs/picds.yaml")
+    cfg["robot"] = a.robot
     cfg["plant"] = {"dof_frictionloss_scale": a.friction}
     pc = cfg["pic"]
     null_d_q = float(pc["null_space"]["d_q"])
     base = PICParams.from_cfg(pc)
 
-    report = {"friction_scale": a.friction, "paper_lambda": list(base.lam), "s0": base.s0,
+    report = {"robot": a.robot, "friction_scale": a.friction, "paper_lambda": list(base.lam), "s0": base.s0,
               "s_max": base.s_max, "delta_s": base.delta_s_frac * base.s_max, "delta_z": base.delta_z,
               "eta": base.eta}
     case0 = build_case(cfg)
@@ -183,9 +185,10 @@ def main(argv=None) -> int:
     report["sweep_T40"] = long_rows
 
     os.makedirs(a.out_dir, exist_ok=True)
-    with open(os.path.join(a.out_dir, "stall_diagnosis.json"), "w", encoding="utf-8") as fh:
+    fn = "stall_diagnosis.json" if a.robot == "FR3" else f"stall_diagnosis_{a.robot}.json"
+    with open(os.path.join(a.out_dir, fn), "w", encoding="utf-8") as fh:
         json.dump(report, fh, indent=1)
-    print("wrote", os.path.join(a.out_dir, "stall_diagnosis.json"))
+    print("wrote", os.path.join(a.out_dir, fn))
     return 0
 
 
