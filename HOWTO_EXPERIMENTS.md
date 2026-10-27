@@ -319,3 +319,30 @@ Validierung, und er ist nicht reproduzierbar abgelegt. Für eine echte Integrati
 existiert in `common/ik.py`, PIC-DS ist nur Position), weitere Startpositionen/Multistart (über Bedingungen mit
 `task.q_start_rad`), 3-DoF-Modell, 2D/3D-Vergleiche (`check_dims` unterstützt 3D-Embedding), PIC-Zerlegungen
 `linear`/`lyapunov`, Servo mit Störpuls.
+
+---
+
+## 10. Erweiterungen auf Branch `pic-physics` (2026-10-27)
+
+Neu in der Konfiguration (alles per `--set` oder YAML; Details in `results/summary/REPORT.md`):
+
+| Schlüssel | Bedeutung |
+|---|---|
+| `robot: FR3 \| UR5e` | Roboter aus der Config (Modelle liegen in `vendor/mujoco_menagerie/`) |
+| `dataset`, `shape` | `LASA/Sine` (Default, vendort), `2D_Shapes/Five_Obstacle_DS`, `3D_Shapes/Cshape_bottom`. Für die beiden letzten: `python experiments/prepare_s2nnds.py --src <S2NNDS-Checkout>` und `S2NNDS_DIR` setzen |
+| `task.start` | `demo_mean` (Default), `{index: i}` (Startmenge `init_range`, braucht S2NNDS_DIR) oder `{x0: [..]}` |
+| `task.center` | Attraktor-/Ebenenposition [m] (Platzierungsvariation) |
+| `task.orientation` | `none` (Default, bitgleich zum alten Verhalten) \| `damped` \| `hold` (Details: `pic/sim_pic.py:OrientParams`; K_r = 50 Nm/rad und ζ = 1.414 aus dem Header der Aufnahme `Recording_Five_Obstacle_DS.csv`, D_r aus der Rotationsträgheit am Start) |
+| `plant.com_shift` | `{link: last, dxyz_m: [dx,dy,dz]}` Schwerpunktverschiebung des letzten Glieds (lokales Koordinatensystem) |
+| `plant.synthetic_friction` | nur UR5e: `relative` (Default, **synthetisch**: gleicher Anteil am Drehmomentlimit wie beim FR3, Gelenk i ↔ i), `absolute`, `none` |
+| `pic.gravity_comp` | `nominal` (Default) oder `plant` (Kompensation mit dem wahren, veränderten Modell) |
+
+Neue Konvergenzklassen: `converged | saturated | diverged | stalled | slow` (feste Heuristik, siehe `pic/analysis.py`);
+zusätzlich pro Lauf `first_violation` (zuerst verletztes Limit: Drehmomentsättigung, Gelenkposition, Gelenkgeschwindigkeit, Hindernis).
+Beschleunigungs-/Ruckgrenzen werden **nicht** ausgewertet (keine verifizierten Werte im Repo).
+
+Matrix: `python -B experiments/run_matrix.py --workers 6` (Roboter x Orientierung x 7 Variationen + α mit 5 Starts; Hintergrundprozesse
+überleben in manchen Umgebungen das Ende eines Aufrufs nicht – im Vordergrund starten) und
+`python -B experiments/make_break_matrix.py results/runs/<matrix-root> --out results/summary`.
+Stall-Diagnose: `python -B experiments/diagnose_stall.py --robot FR3|UR5e`.
+`timeout_moving` heißt jetzt `slow`.

@@ -6,6 +6,7 @@ numpy==2.4.6
 scipy==1.17.1
 matplotlib==3.11.2
 PyYAML==6.0.3
+pandas==3.1.0
 mujoco==3.17.0
 onnx==1.23.2
 pyLasaDataset==0.2.1

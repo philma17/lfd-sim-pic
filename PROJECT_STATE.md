@@ -1,7 +1,14 @@
 # Project state
 
-**Last updated:** 2026-10-26
+**Last updated:** 2026-10-27
 **Latest log entry:** [Current state audit](EXPERIMENT_LOG.md#current-state-audit-2026-10-22)
+
+## Update 2026-10-27 — branch `pic-physics`
+
+Work is on branch `pic-physics` (pushed; `main` untouched). Results: `results/summary/REPORT.md`. New since the 2026-10-26 note: UR5e, dataset/shape/start,
+orientation `none|damped|hold`, COM/mass/inertia/placement variations, convergence classes with first violated limit, break matrix (312 runs, single seed),
+stall diagnosis (base condition = friction x0 for both robots), 59 tests (1 known provenance failure). Open: UR5e friction convention (supervisor), provenance fix,
+Windows verification, repeatability, accel/jerk limits, torque-limit sweep on both robots, stretch items. `RESEARCH_PLAN.md` unchanged.
 
 ## Update 2026-10-26 — experiment framework (uncommitted)
 
