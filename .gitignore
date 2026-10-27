@@ -2,3 +2,4 @@
 results/runs/
 __pycache__/
 *.pyc
+data/

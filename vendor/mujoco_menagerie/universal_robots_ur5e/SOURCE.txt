@@ -1,0 +1,5 @@
+Source: https://github.com/google-deepmind/mujoco_menagerie, directory universal_robots_ur5e
+Revision: d7b481bac63d3d600ab404ee74f7474c5efe8a67 (the Menagerie revision used by LfD_baseline Phase 0;
+last commit touching this directory: 71f066ad0be9cd271f7ed58c030243ef157af9f4). Copied unmodified on 2026-10-27;
+license: see LICENSE in this directory.
+Note: franka_fr3 in this repo is revision cda5236...; its files are byte-identical to those of d7b481b.

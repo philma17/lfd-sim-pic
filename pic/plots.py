@@ -50,6 +50,8 @@ class RunData:
         pl = m["plant"]["requested"]
         return {
             "controller": CTRL_LABEL.get(self.controller, self.controller),
+            "robot": m.get("robot", "FR3"),
+            "orient": m.get("orientation_mode", "none"),
             "alpha": m["ds_speed_factor"],
             "friction": pl["dof_frictionloss_scale"],
             "damping": pl["dof_damping_scale"],
@@ -61,7 +63,7 @@ class RunData:
         }
 
 
-_PARAM_FMT = {"alpha": "α={}", "friction": "fric×{}", "damping": "damp×{}", "gravity": "g×{}",
+_PARAM_FMT = {"robot": "{}", "orient": "ori={}", "alpha": "α={}", "friction": "fric×{}", "damping": "damp×{}", "gravity": "g×{}",
               "mass": "m×{}", "inertia": "I×{}", "tau_lim": "τlim×{}", "q_start": "start={}",
               "controller": "{}"}
 

@@ -11,3 +11,10 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  __init__.py
 4529c9438d79373bf2efd1afbf97fdd22da6b305565257362286a1074e3325aa  scenario.py
 3846c95280daabbc4d000fc4604bb5c0de7ba0519664f70c9faa17aa8a896af6  sim.py
 20c31a21ae87573b35834006f074ee035a69f7d333ab333a68f748bab053eb9b  sim_dynamic.py
+
+Added 2026-10-27 (branch pic-physics), byte-identical copies of LfD_baseline@a06ed55 (git show a06ed55:common/<file>);
+they are needed by pic/scenario_setup.py (dataset/shape/embedding/unsafe-set support, as used by baseline
+experiments/compare_traj.py). Existing lines above are unchanged.
+77d847f47060387de264821a5aa8e3785a12956bf14d9cd37a114a4ddabf8609  datasets.py
+128b25b629496e14234e0b4b70ea41813dd2f51ffde7d08d596289f89347d061  embedding.py
+bca40616278a481610eec0214101d094687398d58ff65c0003d3789c95a5569c  unsafe.py

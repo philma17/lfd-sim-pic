@@ -54,11 +54,12 @@ RESULTS_ROOT = os.path.join(ROOT, "results", "runs")
 CONTROLLERS = ("servo", "pic", "pic_pulse")
 # top-level keys of a run config (picds.yaml keys + additions); anything else is a typo
 CONFIG_KEYS = {"shape", "dataset", "model_source", "time_rate", "robot", "sim", "task", "plant",
-               "pic", "disturbance", "validation", "ds_speed_factor", "analysis"}
+               "pic", "disturbance", "validation", "ds_speed_factor", "analysis", "spatial", "multistart"}
 META_KEYS = {"extends", "experiment", "conditions"}
 # keys that may be ADDED by a condition/--set although the base config does not contain them
-ADDABLE = {("ds_speed_factor",), ("task", "q_start_rad")}
-ADDABLE_PARENTS = {("plant",), ("analysis",)}
+ADDABLE = {("ds_speed_factor",), ("task", "q_start_rad"), ("task", "orientation"), ("task", "R_des"),
+           ("task", "orientation_gains"), ("pic", "gravity_comp")}
+ADDABLE_PARENTS = {("plant",), ("analysis",), ("spatial",), ("multistart",)}
 
 
 # --------------------------------------------------------------------------
@@ -110,7 +111,7 @@ def set_path(d: dict, dotted: str, value) -> None:
     already exist, or be whitelisted (plant.*, analysis.*, ds_speed_factor, task.q_start_rad)."""
     parts = tuple(dotted.split("."))
     if parts[:-1] in ADDABLE_PARENTS:
-        d.setdefault(parts[0], {})                          # plant / analysis may be created
+        d.setdefault(parts[0], {})                          # plant / analysis / spatial / multistart may be created
     cur = d
     for p in parts[:-1]:
         if not isinstance(cur.get(p), dict):
@@ -209,6 +210,15 @@ def model_hashes(case) -> dict:
 # --------------------------------------------------------------------------
 # running
 # --------------------------------------------------------------------------
+def orientation_gain_check(case) -> dict | None:
+    if case.orient is None:
+        return None
+    from .sim_pic import ORIENT_DEFAULTS, verify_orientation_gain_source
+    return {"K_r": case.orient.K_r, "zeta": case.orient.zeta, "defaults": ORIENT_DEFAULTS,
+            "recording_check": verify_orientation_gain_source(),
+            "D_r": case.orient.D_r.tolist(), "Lambda_r_start": case.orient.Lambda_r.tolist()}
+
+
 def execute_controller(controller: str, case, cfg: dict):
     """Run one controller on a prepared Case. Returns the raw result dict."""
     if controller == "servo":
@@ -225,7 +235,8 @@ def execute_controller(controller: str, case, cfg: dict):
         pulses = cfg["disturbance"]["pulses"]
         if not pulses:
             raise ValueError("controller 'pic_pulse' needs disturbance.pulses in the config")
-    return run_pic(case, params, null_d_q=null_d_q, clip=clip, pulses=pulses)
+    return run_pic(case, params, null_d_q=null_d_q, clip=clip, pulses=pulses,
+                   gravity_comp=str(pc.get("gravity_comp", "nominal")))
 
 
 def write_csv(path: str, arr: dict, stride: int = 1) -> None:
@@ -292,14 +303,19 @@ def run_one(controller: str, label: str, case, cfg: dict, batch_dir: str, batch_
     an = analysis.analysis_params(cfg)
     lim = {"q_min_rad": case.robot.q_min.tolist(), "q_max_rad": case.robot.q_max.tolist(),
            "qd_max_rad_s": case.robot.qd_max.tolist(),
-           "tau_doc_nominal_Nm": TAU_MAX_DOC["FR3"][0].tolist()}
+           "tau_doc_nominal_Nm": TAU_MAX_DOC[case.robot_name][0].tolist()}
+    scn = case.scenario
     manifest = {
         "status": "incomplete", "run_id": run_id, "batch_id": batch_id, "label": label,
         "experiment": exp_name, "controller": controller,
         "created_utc": dt_mod.datetime.now(dt_mod.timezone.utc).isoformat(timespec="seconds"),
         "command_line": argv, "config_files": config_files,
         "config_sha256": sha256_obj(cfg), "git": git_info(), "environment": environment_info(),
-        "robot": "FR3", "execution": "dynamic simulation (MuJoCo, not kinematic, not ideal)",
+        "robot": case.robot_name, "orientation_mode": "none" if case.orient is None else case.orient.mode,
+        "dataset": scn["dataset"], "shape": scn["shape"], "start_mode": scn["start_label"],
+        "scenario_warnings": scn["warnings"], "unsafe_set": scn["unsafe_info"],
+        "s2nnds_config": scn["s2nnds_config"], "orientation_gain_source": orientation_gain_check(case),
+        "execution": "dynamic simulation (MuJoCo, not kinematic, not ideal)",
         "interface": ("joint position servo, ctrl = q_des" if controller == "servo" else
                       "direct joint torque via qfrc_applied (actuation disabled)"),
         "scenario": {"shape": cfg["shape"], "dataset": cfg.get("dataset"), "task": cfg["task"],
@@ -356,6 +372,8 @@ def write_run_report(rdir: str, man: dict, m: dict, with_plots: bool) -> None:
     pl = man["plant"]["requested"]
     L = [f"# Run `{man['run_id']}`", "",
          f"- **Status:** {m['failure_class']} (data complete)",
+         f"- **Robot / scenario:** {man['robot']}, {man['dataset']}/{man['shape']}, start `{man['start_mode']}`, "
+         f"orientation `{man['orientation_mode']}`",
          f"- **Controller:** {man['controller']} — {man['interface']}",
          f"- **Execution:** {man['execution']}",
          f"- **Commit:** `{man['git'].get('commit', 'unknown')}`"
@@ -385,7 +403,10 @@ def write_run_report(rdir: str, man: dict, m: dict, with_plots: bool) -> None:
             ("n_pos_limit_viol_steps", "joint position limit violations (steps)"),
             ("n_vel_limit_viol_steps", "joint velocity limit violations (steps)"),
             ("sigma_min_Jp_min", "min σ_min(J_p) along path [m/rad]"),
-            ("contact_detected", "contact detected")]
+            ("contact_detected", "contact detected"), ("first_violation", "first violated limit"),
+            ("first_saturation", "first saturation (joint, time)"), ("max_ori_err_rad", "max orientation error/drift [rad]"),
+            ("cond_J6_max", "max cond(J6)"), ("min_limit_margin_pct", "min joint-limit margin [%]"),
+            ("null_dim", "null-space dimension"), ("null_drift_max_rad", "max null-space drift [rad]")]
     keys += [(k, k) for k in ("tank_s_min_J", "tank_s_max_J", "tank_clamp_steps", "min_beta_R",
                               "max_abs_servo_gap_rad") if k in m]
     for k, lab in keys:
@@ -402,7 +423,8 @@ def write_run_report(rdir: str, man: dict, m: dict, with_plots: bool) -> None:
 SUMMARY_FIELDS = ["run_id", "controller", "failure_class", "converged", "final_dist_m", "t_reach_s",
                   "rmse_sync_m", "geom_dev_max_m", "tcp_speed_peak_m_s", "d_tcp_acc_peak_m_s2",
                   "d_tcp_jerk_peak_m_s3", "peak_cmd_torque_ratio", "peak_applied_torque_ratio",
-                  "saturated_fraction", "sigma_min_Jp_min", "wall_time_s"]
+                  "saturated_fraction", "sigma_min_Jp_min", "cond_Jp_max", "max_ori_err_rad", "null_dim",
+                  "wall_time_s"]
 
 
 def run_experiment(config: str, sets: dict | None = None, controllers: list | None = None,
@@ -521,7 +543,8 @@ def write_batch_summary(batch_dir, batch_id, name, results, files) -> dict:
                  f"{1e3 * m['rmse_sync_m']:.3g} | {m['peak_cmd_torque_ratio']:.3f} | "
                  f"{m['peak_applied_torque_ratio']:.3f} | {100 * m['saturated_fraction']:.2f} |")
     L += ["", "`stalled` = not converged and the TCP is (almost) at rest at the end; "
-          "`timeout_moving` = not converged but still moving when T_max was reached.", ""]
+          "`slow` = not converged but still moving when T_max was reached; `saturated` = more than 5 % of the "
+          "steps saturated; `diverged` = final distance > 1.5 x initial distance.", ""]
     with open(os.path.join(batch_dir, "batch_report.md"), "w", encoding="utf-8") as fh:
         fh.write("\n".join(L) + "\n")
     summ = {"batch_id": batch_id, "n_runs": len(results), "n_errors": n_err,

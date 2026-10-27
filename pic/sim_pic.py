@@ -28,27 +28,51 @@ from dataclasses import dataclass
 import mujoco
 import numpy as np
 
-from common.ds import PlanarEmbedding
-from common.ik import IKResult, Target, multistart_ik, task_rows, task_sigma_min
+from common.ik import IKResult, Target, multistart_ik, rot_error, task_rows, task_sigma_min
 from common.robots import ROBOTS, Robot
-from common.scenario import build_ds, sim_params
+from common.scenario import sim_params
 from common.sim_dynamic import (TAU_MAX_DOC, check_dims, gravity_torque, ideal_rollout,
                                 tracking_metrics)
 
 from .controller import PICController, PICParams
 from .plant import apply_plant, resolve_plant, torque_limit
+from .scenario_setup import load_scenario
+
+R_DES_DEFAULT = [[1.0, 0.0, 0.0], [0.0, -1.0, 0.0], [0.0, 0.0, -1.0]]   # baseline: tool z down, x || world x
+# Orientation gains. SOURCE (checked by verify_orientation_gain_source when the file is available):
+# S2NNDS robot_demonstrations/3D_Shapes/Recording_Five_Obstacle_DS.csv ("hand_down", tool pointing down,
+# the same orientation as R_DES_DEFAULT), header JSON: rotational_stiffness [50, 50, 50], damping_ratio 1.414.
+ORIENT_DEFAULTS = {"K_r": 50.0, "zeta": 1.414}
+ORIENTATION_MODES = ("none", "damped", "hold")
+
+
+@dataclass
+class OrientParams:
+    """Rotational part of the PIC-DS torque (mode 'damped' | 'hold').
+    tau_rot = -D_r omega                       (damped)
+    tau_rot =  K_r e_rot - D_r omega           (hold),  e_rot = rot_error(R, R_des) [rad, world]
+    K_r = ORIENT_DEFAULTS (recording), D_r = 2 zeta sqrt(K_r) sqrtm(Lambda_r(q_start)) (constant 3x3):
+    Lambda_r = (Jr M^-1 Jr^T)^-1 is the rotational task-space inertia at the start configuration, so each
+    principal rotational axis gets damping ratio zeta (1.414 = the value of the recording) for that
+    inertia. ASSUMPTION: the recording's rotational_stiffness is isotropic [Nm/rad] in the world frame."""
+    mode: str
+    R_des: np.ndarray
+    K_r: float
+    zeta: float
+    D_r: np.ndarray
+    Lambda_r: np.ndarray
 
 
 @dataclass
 class Case:
-    """Everything that defines the baseline FR3 / LASA Sine / pos cell."""
+    """Everything that defines a run: robot, dataset/shape/start, plant, orientation mode."""
     cfg: dict
     robot: Robot
     ds: object
     sc: object
     rate: float
     sp: object
-    emb: PlanarEmbedding
+    emb: object
     tgt: Target
     x0_n: np.ndarray
     q_start: np.ndarray
@@ -58,47 +82,104 @@ class Case:
     tau_limit: np.ndarray | None = None     # torque limit used for clipping/reporting [Nm]
     speed_factor: float = 1.0               # alpha in  x_dot = alpha * f(x)
     plant_report: dict | None = None        # requested + applied plant parameters
+    robot_name: str = "FR3"
+    unsafe: object = None                   # common.unsafe.UnsafeSet or None (clearance measure)
+    scenario: dict | None = None            # output of pic.scenario_setup.load_scenario
+    orient: OrientParams | None = None      # None = orientation mode "none"
+    servo_tgt: Target | None = None         # task for the position-servo baseline
+
+
+def rotational_inertia(robot, q) -> np.ndarray:
+    """Lambda_r = (Jr M^-1 Jr^T)^-1 [kg m^2] of the TCP frame at q (world axes)."""
+    m = robot.model
+    d = mujoco.MjData(m)
+    d.qpos[robot.qadr] = q
+    mujoco.mj_forward(m, d)
+    M = np.zeros((m.nv, m.nv))
+    mujoco.mj_fullM(m, d, M)
+    robot.fk(q)
+    Jr = robot.jac()[3:]
+    return np.linalg.inv(Jr @ np.linalg.solve(M, Jr.T))
+
+
+def orientation_params(robot, q, task_cfg: dict) -> OrientParams | None:
+    mode = task_cfg.get("orientation", "none")
+    if mode not in ORIENTATION_MODES:
+        raise ValueError(f"task.orientation must be one of {ORIENTATION_MODES}, got {mode!r}")
+    if mode == "none":
+        return None
+    g = {**ORIENT_DEFAULTS, **(task_cfg.get("orientation_gains") or {})}
+    K_r, zeta = float(g["K_r"]), float(g["zeta"])
+    if not (K_r > 0 and zeta > 0):
+        raise ValueError("orientation gains K_r and zeta must be > 0")
+    Lam = rotational_inertia(robot, q)
+    w, V = np.linalg.eigh(0.5 * (Lam + Lam.T))
+    D = 2.0 * zeta * np.sqrt(K_r) * (V * np.sqrt(w)) @ V.T
+    R_des = np.asarray(task_cfg.get("R_des", R_DES_DEFAULT), float)
+    if not (np.allclose(R_des @ R_des.T, np.eye(3), atol=1e-9) and np.linalg.det(R_des) > 0):
+        raise ValueError("task.R_des must be a rotation matrix")
+    return OrientParams(mode, R_des, K_r, zeta, D, Lam)
+
+
+def verify_orientation_gain_source() -> dict:
+    """Compare ORIENT_DEFAULTS with the recording header (needs S2NNDS_DIR with robot_demonstrations)."""
+    from common.datasets import load_recording
+    try:
+        par = load_recording("hand_down")["params"]
+    except FileNotFoundError:
+        return {"checked": False, "reason": "recording not available (see experiments/prepare_s2nnds.py)"}
+    K = par["rotational_stiffness"]
+    ok = bool(np.allclose(K, ORIENT_DEFAULTS["K_r"]) and np.isclose(par["damping_ratio"], ORIENT_DEFAULTS["zeta"]))
+    return {"checked": True, "match": ok, "rotational_stiffness": K, "damping_ratio": par["damping_ratio"],
+            "translational_eigen": [par.get("eigen_0"), par.get("eigen_1")]}
 
 
 def build_case(cfg: dict, friction_scale: float | None = None,
                speed_factor: float | None = None) -> Case:
-    """Same start procedure as common.sim.run (multi-start IK on the ideal-rollout start point),
-    so q_start is the baseline start configuration of the FR3 pos cell.
+    """Build robot + plant + scenario + start for one run.
 
-    Configurable (all optional, defaults reproduce the historical cell):
+    Configurable (defaults reproduce the historical FR3 / LASA Sine cell bit for bit):
+      cfg["robot"]            FR3 | UR5e
+      cfg["dataset"/"shape"], cfg["task"]["start"], cfg["spatial"], cfg["multistart"]  -> pic.scenario_setup
       cfg["ds_speed_factor"]  alpha > 0: x_dot = alpha * f(x). Applied to the DS time rate, which
                               scales BOTH the commanded velocity (v_peak = rate*L) and the ideal
                               reference rollout, so geometry is unchanged and only timing scales.
-      cfg["plant"]            see pic.plant (friction, damping, gravity, mass, inertia, torque limit)
-      cfg["task"]["q_start_rad"]  explicit start configuration instead of multi-start IK
+      cfg["plant"]            see pic.plant (friction, damping, gravity, mass, inertia, torque limit, COM)
+      cfg["task"]["q_start_rad"]   explicit start configuration instead of multi-start IK
+      cfg["task"]["orientation"]   none | damped | hold (see OrientParams). With "hold" the start
+                              configuration is found with a full-pose IK (tool z down), as in the baseline
+                              full6 mode; "none"/"damped" use the position-only start IK of the baseline pos mode.
     friction_scale / speed_factor arguments override the cfg values (kept for older callers).
     1.0 friction = unmodified Menagerie plant (the baseline); anything else is a DIAGNOSTIC plant."""
-    if cfg["robot"] != "FR3":
-        raise NotImplementedError("first PIC step supports the FR3 only")
+    name = cfg["robot"]
+    if name not in ROBOTS:
+        raise ValueError(f"unknown robot {name!r}; registered: {sorted(ROBOTS)}")
     if cfg["task"]["mode"] != "pos":
-        raise NotImplementedError("first PIC step: position task only (no orientation control)")
+        raise NotImplementedError("task.mode must be 'pos' (orientation is chosen with task.orientation)")
     plant = dict(cfg.get("plant") or {})
     if friction_scale is not None:
         plant["dof_frictionloss_scale"] = float(friction_scale)
     plant = resolve_plant(plant)
-    robot = Robot(ROBOTS["FR3"])
+    robot = Robot(ROBOTS[name])
     plant_report = apply_plant(robot, plant)
-    robot_nominal = Robot(ROBOTS["FR3"])               # never modified
+    robot_nominal = Robot(ROBOTS[name])                # never modified
     alpha = float(cfg.get("ds_speed_factor", 1.0) if speed_factor is None else speed_factor)
     if not (np.isfinite(alpha) and alpha > 0):
         raise ValueError(f"ds_speed_factor must be finite and > 0, got {alpha}")
-    ds, sc, rate = build_ds(cfg)
-    rate = rate * alpha
+    scn = load_scenario(cfg)
+    ds, sc, emb, x0 = scn["ds"], scn["sc"], scn["emb"], scn["x0"]
+    rate = scn["rate"] * alpha
     sp = sim_params(cfg)
     if not np.isclose(sp.dt, robot.model.opt.timestep):
         raise ValueError(f"sim.dt {sp.dt} != model timestep {robot.model.opt.timestep}")
     t = cfg["task"]
-    emb = PlanarEmbedding(np.array(t["center"], float), t["plane"]["e1"], t["plane"]["e2"],
-                          float(t["L_m"]), t["anchor"])
-    if t.get("start", "demo_mean") != "demo_mean":
-        raise NotImplementedError("only start: demo_mean (x0 = mean demonstration start)")
-    x0 = np.asarray(sc.x0_n, float)
-    tgt = Target("pos")
+    orient_mode = t.get("orientation", "none")
+    if orient_mode not in ORIENTATION_MODES:
+        raise ValueError(f"task.orientation must be one of {ORIENTATION_MODES}, got {orient_mode!r}")
+    R_des = np.asarray(t.get("R_des", R_DES_DEFAULT), float)
+    tgt = Target("pos")                                  # task of the start IK / of the servo for none, damped
+    if orient_mode == "hold":
+        tgt = Target("full6", R_des=R_des)
     p0 = emb.to_world(x0)
     if t.get("q_start_rad") is not None:
         q0 = np.asarray(t["q_start_rad"], float)
@@ -116,11 +197,15 @@ def build_case(cfg: dict, friction_scale: float | None = None,
                             sp.start_criterion, free=None,
                             min_margin_pct=sp.start_min_margin_pct)
         if not ikr.converged:
-            raise RuntimeError(f"start IK did not converge (pos err {ikr.pos_err:.3e} m)")
+            raise RuntimeError(f"start IK did not converge (pos err {ikr.pos_err:.3e} m, "
+                               f"ori err {ikr.ori_err:.3e} rad)")
+    orient = orientation_params(robot, ikr.q, t)
     return Case(cfg, robot, ds, sc, rate, sp, emb, tgt, x0, ikr.q.copy(), ikr,
                 robot_nominal=robot_nominal,
                 tau_limit=torque_limit(robot.spec.name, plant["torque_limit_scale"]),
-                speed_factor=alpha, plant_report=plant_report)
+                speed_factor=alpha, plant_report=plant_report, robot_name=name,
+                unsafe=scn["unsafe"], scenario=scn, orient=orient,
+                servo_tgt=tgt)
 
 
 def null_projector(Jp: np.ndarray, rtol: float = 1e-6):
@@ -145,10 +230,15 @@ def apply_tcp_force(m, d, body: int, p_tcp: np.ndarray, force: np.ndarray) -> No
 
 def run(case: Case, params: PICParams, *, null_d_q: float = 0.0, tau_limit=None,
         clip: bool = True, pulses=(), use_f: bool = True, v0=None, T_max=None,
-        q_start=None) -> dict:
+        q_start=None, gravity_comp: str = "nominal") -> dict:
     """Closed-loop PIC-DS run. use_f=False sets f = 0 (damping + gravity compensation only).
     v0: initial TCP velocity [m/s] (world), realised with the pseudo-inverse of Jp.
-    pulses: iterable of dicts {t_start_s, duration_s, force_N[3]} (world frame, at the TCP)."""
+    pulses: iterable of dicts {t_start_s, duration_s, force_N[3]} (world frame, at the TCP).
+    gravity_comp: "nominal" (g(q) of the unmodified model, the default: the controller does not know
+    about plant changes) or "plant" (g(q) of the simulated, possibly modified model; separates the effect
+    of a changed plant from the effect of the compensation mismatch).
+    Orientation (case.orient): none -> tau = g + Jp^T F + tau_null (bit-identical to the historical code);
+    damped/hold -> tau = g + J6^T [F; tau_rot] + tau_null with the null space of J6 (FR3: 1-dim, UR5e: 0)."""
     robot, ds, emb, sp = case.robot, case.ds, case.emb, case.sp
     m = robot.model
     n = robot.n
@@ -171,7 +261,10 @@ def run(case: Case, params: PICParams, *, null_d_q: float = 0.0, tau_limit=None,
         tau_lim = np.asarray(case.tau_limit, float)
     else:
         tau_lim = TAU_MAX_DOC[robot.spec.name][0]
-    g_robot = case.robot_nominal if case.robot_nominal is not None else robot
+    if gravity_comp not in ("nominal", "plant"):
+        raise ValueError("gravity_comp must be 'nominal' or 'plant'")
+    g_robot = case.robot_nominal if (gravity_comp == "nominal" and case.robot_nominal is not None) else robot
+    orient = case.orient
     pulses = list(pulses)
     q0 = np.asarray(case.q_start if q_start is None else q_start, float)
 
@@ -183,27 +276,38 @@ def run(case: Case, params: PICParams, *, null_d_q: float = 0.0, tau_limit=None,
         robot.fk(q0)
         d.qvel[robot.dadr] = np.linalg.pinv(robot.jac()[:3]) @ np.asarray(v0, float)
 
-    keys = ("P", "Xn", "Q", "QD", "XD", "F", "F_ext", "TAU_CMD", "TAU_APP", "TAU_G")
+    keys = ("P", "Xn", "Q", "QD", "XD", "F", "F_ext", "TAU_CMD", "TAU_APP", "TAU_G", "QACC", "OMEGA",
+            "TAU_ROT")
     shapes = {"P": 3, "Xn": dim, "Q": n, "QD": n, "XD": 3, "F": 3, "F_ext": 3, "TAU_CMD": n,
-              "TAU_APP": n, "TAU_G": n}
+              "TAU_APP": n, "TAU_G": n, "QACC": n, "OMEGA": 3, "TAU_ROT": 3}
     L = {k: np.zeros((N + 1, shapes[k])) for k in keys}
     sc_keys = ("s", "z", "alpha", "beta_s", "beta_R", "p_diss", "KE", "P_ext", "dperp",
-               "f_norm", "null_dim")
+               "f_norm", "null_dim", "E_rot", "ori_err")
     S = {k: np.zeros(N + 1) for k in sc_keys}
 
     old_flags = int(m.opt.disableflags)
     m.opt.disableflags = old_flags | int(mujoco.mjtDisableBit.mjDSBL_ACTUATION)
     tmp = np.zeros(m.nv)
     first_contact = None
+    R_ref = None
     try:
         for k in range(N + 1):
             t = k * dt
             mujoco.mj_forward(m, d)                      # fresh M(q), xipos at the measured state
             q = d.qpos[robot.qadr].copy()
             qd = d.qvel[robot.dadr].copy()
-            p, _ = robot.fk(q)
-            Jp = robot.jac()[:3]
+            p, R = robot.fk(q)
+            J6 = robot.jac()
+            Jp = J6[:3]
             xd = Jp @ qd
+            omega = J6[3:] @ qd
+            if R_ref is None:                            # reference for the orientation error / drift
+                R_ref = orient.R_des if orient is not None and orient.mode == "hold" else R.copy()
+            e_rot = rot_error(R, R_ref)
+            S["ori_err"][k] = float(np.linalg.norm(e_rot))
+            L["OMEGA"][k] = omega
+            if orient is not None and orient.mode == "hold":
+                S["E_rot"][k] = 0.5 * orient.K_r * float(e_rot @ e_rot)
             x_n, dp = emb.to_plane(p)
             f = (v_peak * emb.vel_to_world(ds.f_n(x_n)) - sp.k_perp * dp * emb.normal
                  if use_f else np.zeros(3))
@@ -223,9 +327,18 @@ def run(case: Case, params: PICParams, *, null_d_q: float = 0.0, tau_limit=None,
                 break
             out = ctrl.step(xd, f, dt)
             g = gravity_torque(g_robot, q)       # compensation uses the NOMINAL model
-            Nproj, nd = null_projector(Jp)
+            if orient is None:
+                Nproj, nd = null_projector(Jp)
+                tau_task = Jp.T @ out["F"]
+            else:
+                tau_rot = -orient.D_r @ omega
+                if orient.mode == "hold":
+                    tau_rot = tau_rot + orient.K_r * e_rot
+                L["TAU_ROT"][k] = tau_rot
+                Nproj, nd = null_projector(J6)
+                tau_task = J6.T @ np.concatenate([out["F"], tau_rot])
             tau_null = -null_d_q * (Nproj @ qd) if (null_d_q > 0 and nd > 0) else np.zeros(n)
-            tau_cmd = g + Jp.T @ out["F"] + tau_null
+            tau_cmd = g + tau_task + tau_null
             tau_app = np.clip(tau_cmd, -tau_lim, tau_lim) if clip else tau_cmd.copy()
             d.qfrc_applied[robot.dadr] = tau_app
             d.xfrc_applied[:] = 0.0
@@ -236,6 +349,7 @@ def run(case: Case, params: PICParams, *, null_d_q: float = 0.0, tau_limit=None,
                 S[key][k] = out[key]
             S["null_dim"][k] = nd
             mujoco.mj_step(m, d)
+            L["QACC"][k] = d.qacc[robot.dadr]            # acceleration at state k under torque k (MuJoCo)
             if d.ncon and first_contact is None:
                 c = d.contact[0]
                 first_contact = {"t_s": (k + 1) * dt,
@@ -257,7 +371,8 @@ def run(case: Case, params: PICParams, *, null_d_q: float = 0.0, tau_limit=None,
     clipped = np.abs(TC) > tau_lim + 1e-12
     pos_exc = np.maximum(robot.q_min - Q, Q - robot.q_max)
     vel_ratio = np.abs(QD) / robot.qd_max
-    W = S["KE"] + S["s"]                                 # storage W = KE + s (f_C = 0, [P] Thm 1)
+    # storage W = KE + s (+ rotational spring energy 1/2 K_r |e_rot|^2 in hold mode; f_C = 0, [P] Thm 1)
+    W = S["KE"] + S["s"] + S["E_rot"]
     dW = W[1:] - W[:-1] - S["P_ext"][:-1] * dt           # per-step change minus external work
     res = {
         "robot": robot.spec.name, "controller": "PIC-DS", "mode": "pos", "n_steps": N, "dt": dt,
@@ -302,11 +417,27 @@ def run(case: Case, params: PICParams, *, null_d_q: float = 0.0, tau_limit=None,
                    "n_dW_positive_steps": int(np.sum(dW > 1e-9)),
                    "sum_positive_dW_J": float(dW[dW > 0].sum())},
         "q_start_rad": q0.tolist(), "q_final_rad": Q[-1].tolist(),
+        "orientation": {"mode": "none" if orient is None else orient.mode,
+                        "max_ori_err_rad": float(S["ori_err"].max()),
+                        "ori_err_final_rad": float(S["ori_err"][-1]),
+                        "reference": "R_des" if (orient is not None and orient.mode == "hold") else "R(t=0) (drift)",
+                        "gravity_comp": gravity_comp},
+        "max_ori_err_rad": float(S["ori_err"].max()),
         "finite": bool(np.all(np.isfinite(Q)) and np.all(np.isfinite(QD))),
     }
+    if orient is not None:
+        res["orientation"].update(K_r=orient.K_r, zeta=orient.zeta, D_r=orient.D_r.tolist(),
+                                  Lambda_r_start=orient.Lambda_r.tolist(), R_des=orient.R_des.tolist())
+    clearance = None
+    if case.unsafe is not None:
+        clearance = emb.L * case.unsafe.signed_distance(L["Xn"])      # world metres, < 0 = inside the set
+        res["clearance_min_m"] = float(clearance.min())
     res["traj"] = {"t": np.arange(N + 1) * dt, "P": P, "P_ideal": P_id, "Xn": L["Xn"],
                    "X_ideal": X_id, "Q": Q, "QD": QD, "xd": L["XD"], "F": L["F"],
                    "F_ext": L["F_ext"], "tau_cmd": L["TAU_CMD"], "tau_applied": L["TAU_APP"],
                    "tau_grav": L["TAU_G"], "tau_limit": tau_lim, "err_sync": e_sync,
-                   "geom_dev": g_dev, "dist_goal": dist, "dW": dW, **S}
+                   "geom_dev": g_dev, "dist_goal": dist, "dW": dW, "qacc": L["QACC"],
+                   "omega": L["OMEGA"], "tau_rot": L["TAU_ROT"], **S}
+    if clearance is not None:
+        res["traj"]["clearance_m"] = clearance
     return res

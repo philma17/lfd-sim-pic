@@ -126,11 +126,16 @@ class TestNullProjector(unittest.TestCase):
 class TestProvenance(unittest.TestCase):
     def test_vendored_files_unchanged(self):
         d = os.path.join(ROOT, "common")
-        lines = [ln.split() for ln in open(os.path.join(d, "VENDORED.txt")) if ln.strip().endswith(".py")]
-        self.assertEqual(len(lines), 8)
-        for h, name in lines:
+        with open(os.path.join(d, "VENDORED.txt"), encoding="utf-8") as fh:
+            lines = [ln.split() for ln in fh if ln.strip().endswith(".py")]
+        self.assertEqual(len(lines), 11)       # 8 original + datasets/embedding/unsafe (added 2026-10-27)
+        bad = []
+        for h, name in lines:                   # collect ALL mismatches (same strictness as before)
             with open(os.path.join(d, name), "rb") as fh:
-                self.assertEqual(hashlib.sha256(fh.read()).hexdigest(), h, name)
+                got = hashlib.sha256(fh.read()).hexdigest()
+            if got != h:
+                bad.append(f"{name}: recorded {h[:8]} current {got[:8]}")
+        self.assertEqual(bad, [], "vendored files differ from the recorded hashes")
 
     def test_start_and_servo_match_baseline_results(self):
         p = "/home/philipp/lfd_baseline/results/dynamic_baseline/metrics.json"
