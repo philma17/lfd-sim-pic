@@ -22,7 +22,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PY = sys.executable
 CONFIGS = ["var_alpha", "var_placement", "var_com", "var_com_truecomp", "var_mass", "var_mass_truecomp",
-           "var_inertia"]
+           "var_inertia", "torque_limit", "var_speed_L"]
 COMBOS = ["FR3:hold", "UR5e:hold", "FR3:none", "UR5e:none"]
 N_STARTS = 5
 
@@ -40,6 +40,7 @@ def main(argv=None) -> int:
     ap.add_argument("--combos", nargs="+", default=COMBOS)
     ap.add_argument("--configs", nargs="+", default=CONFIGS)
     ap.add_argument("--no-starts", action="store_true")
+    ap.add_argument("--no-plots", action="store_true", help="skip per-run plots (data and metrics are still saved)")
     ap.add_argument("--root", default=None, help="output root (default results/runs/matrix_<stamp>)")
     a = ap.parse_args(argv)
     root = a.root or os.path.join(ROOT, "results", "runs", f"matrix_{dt.datetime.now():%Y%m%d-%H%M%S}")
@@ -50,7 +51,8 @@ def main(argv=None) -> int:
         out = os.path.join(root, f"{robot}_{ori}")
         common = ["--set", f"robot={robot}", "--set", f"task.orientation={ori}", "--out-root", out]
         for c in a.configs:
-            jobs.append([PY, "-B", "experiments/run_experiment.py", c, *common, "--tag", c])
+            jobs.append([PY, "-B", "experiments/run_experiment.py", c, *common, "--tag", c] +
+                        (["--no-plots"] if a.no_plots else []))
         if not a.no_starts:
             for i in range(N_STARTS):
                 jobs.append([PY, "-B", "experiments/run_experiment.py", "var_alpha", *common,

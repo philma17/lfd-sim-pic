@@ -219,12 +219,39 @@ def orientation_gain_check(case) -> dict | None:
             "D_r": case.orient.D_r.tolist(), "Lambda_r_start": case.orient.Lambda_r.tolist()}
 
 
+class QaccRecorder:
+    """Record d.qacc of the arm after every mujoco.mj_step on `robot.model` while active.
+    common.sim_dynamic.run (vendored, unchanged) does not log it. The wrapper calls the original
+    mj_step unchanged, so the simulation is identical (tested in tests/test_experiment.py);
+    after mj_step, d.qacc is the acceleration at the state the step started from."""
+
+    def __init__(self, robot):
+        self.robot, self.rows = robot, []
+
+    def __enter__(self):
+        self._orig = mujoco.mj_step
+        orig, robot, rows = self._orig, self.robot, self.rows
+
+        def wrapped(m, d, *a, **k):
+            orig(m, d, *a, **k)
+            if m is robot.model:
+                rows.append(d.qacc[robot.dadr].copy())
+        mujoco.mj_step = wrapped
+        return self
+
+    def __exit__(self, *exc):
+        mujoco.mj_step = self._orig
+        return False
+
+
 def execute_controller(controller: str, case, cfg: dict):
     """Run one controller on a prepared Case. Returns the raw result dict."""
     if controller == "servo":
-        return sim_dynamic.run(case.robot, case.ds, case.emb, case.x0_n, case.rate, case.tgt,
-                               case.sp, q_start=case.q_start, n_substeps=1,
-                               tau_limit=case.tau_limit)
+        with QaccRecorder(case.robot) as rec:
+            res = sim_dynamic.run(case.robot, case.ds, case.emb, case.x0_n, case.rate, case.servo_tgt or case.tgt,
+                                  case.sp, q_start=case.q_start, n_substeps=1, tau_limit=case.tau_limit)
+        res["traj"]["qacc"] = np.vstack(rec.rows)
+        return res
     pc = cfg["pic"]
     params = PICParams.from_cfg(pc)
     ns = pc["null_space"]

@@ -283,6 +283,9 @@ def summarize(controller: str, res: dict, arr: dict, case, an: dict) -> dict:
         "manipulability_Jp_min": float(arr["manipulability_Jp"].min()),
         "contact_detected": res.get("first_contact") is not None,
         "d_qdd_peak_rad_s2": float(np.abs(arr["d_qdd"]).max()),
+        "d_qddd_peak_rad_s3": float(np.abs(arr["d_qddd"]).max()),
+        "d_qddd_peak_after_startup_rad_s3": float(np.abs(arr["d_qddd"][k0:]).max()),
+        "qacc_direct_peak_after_startup_rad_s2": (float(np.nanmax(np.abs(arr["qacc_direct"][k0:]))) if "qacc_direct" in arr else None),
         "qacc_direct_peak_rad_s2": (float(np.nanmax(np.abs(arr["qacc_direct"]))) if "qacc_direct" in arr else None),
         "clearance_min_m": (float(arr["clearance_m"].min()) if "clearance_m" in arr else None),
     }

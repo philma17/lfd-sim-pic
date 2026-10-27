@@ -103,3 +103,18 @@ that use this base are diagnostic-plant results and are labelled so; nominal-fri
 The recorded λ1 (150-200) is of the same order as the predicted FR3 breakaway threshold (≈ 225) and ~10x the paper value 20. **[H]** this is
 why the paper value does not move the simulated arm; it was **not** used to tune anything here (no λ was changed outside the stall sweep). The recorded
 control law and units were not verified to be identical to the implemented one (e.g. the recording also uses a z-stiffness and a huge tank).
+
+---
+
+## Addendum 2 (2026-10-27): final distance over λ1 (log-log), friction x1
+
+Reproduce: `python -B experiments/final_distance_vs_lambda.py` and `... --start-norm 0.3`.
+Figures `stall_final_distance.png`, `stall_final_distance_near0.3.png`; data `stall_final_distance*.json`. 13 values λ1 = 20…1280 (factor √2), both robots,
+T_max 10 s (**the success criterion, unchanged**) and 40 s (extra information). UR5e friction is SYNTHETIC. Only λ1 changes.
+
+**Expectation tested:** final distance ∝ 1/λ1 (Coulomb offset at standstill). **Result [V]: not observed.**
+- Demo-mean start, T_max 10 s: final distance is flat and non-monotonic (FR3 94 → 105 → 46 (λ1 = 320) → 97 mm; UR5e 94 → 42 (λ1 = 452) → 114 mm); log-log slope −0.02 (FR3) / −0.015 (UR5e) instead of −1. Converged runs: **0 of 13 per robot** (criterion). At T_max 40 s the slope is +0.20 / +0.15 (the arm drifts further away).
+- Reason it is not a standstill offset [V]: at the end the TCP is mostly still moving or re-stalled at a *different place on the path* (`|f_end|` 0.011-0.05 m/s; `λ1·|f_end|` grows from 0.7 N to 12-16 N for λ1 = 20 → 450), i.e. the stopping point is not set by `λ1 |f| = friction` at a point close to the goal. The 1/λ1 law would need the arm to arrive near the goal first.
+- Extra measurement starting ON the ideal path at ‖x_n‖ = 0.3 (30 mm, same DS path): criterion at T_max 10 s still 0/13 per robot. At **T_max 40 s** the final distance drops by orders of magnitude for large λ1 (FR3 λ1 ≥ 640: converged, 3/13 runs; 452: 4 mm; UR5e λ1 = 1280: converged, 1/13), with *no* 1/λ1 trend below the threshold (22-157 mm). This is a threshold-like transition, not a power law.
+
+**[H]** There is a λ1 threshold (about 2-3 × the predicted breakaway λ1\*: FR3 ≈ 450-640 vs 225, UR5e ≈ 900-1280 vs 415) above which the arm can finish the path; below it joint friction re-stalls it somewhere along the path. Not isolated by a controlled experiment; single start; not used to change the base condition (success criterion not met at T_max 10 s from the demo start).

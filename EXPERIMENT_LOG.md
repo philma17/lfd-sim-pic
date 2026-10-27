@@ -72,3 +72,13 @@ The documented observation is that nominal FR3 Coulomb friction (approximately `
 - **Steps 3-5:** 312 runs under `results/runs/matrix_main` (git-ignored, 1.9 GB), summaries in `results/summary/` (`REPORT.md`, `break_matrix.*`, `matrix_long.csv`, `alpha_starts.csv`, comparison plots). Note: the COM condition labels were renamed (`comx_plus5cm` …) and the COM batches were re-run once because the label sanitizer dropped the `+`; the earlier COM runs were deleted (scratch, not a historic result).
 - **Tests:** `python -B -m unittest discover -s tests`: 59 run; with `S2NNDS_DIR=data/S2NNDS_extra`: 57 pass, 1 skip, 1 fail (`test_vendored_files_unchanged`: `ds.py`, `robots.py` — unchanged known mismatch); without extra data: 54 pass, 4 skip, 1 fail. The provenance test now reports all mismatches and expects 11 listed files; hashes were not changed.
 - **Not done:** Windows run, stretch items, accel/jerk limits, torque-limit sweep for the UR5e.
+
+## Branch `pic-physics`, second request — 2026-10-27
+
+- Final distance vs λ1 (13 values, both robots, T_max 10 and 40 s, plus start on the ideal path at ‖x_n‖ = 0.3): flat, not ∝ 1/λ1; success criterion unchanged (0/13 at 10 s). Large λ1 converge within 40 s from the near start (FR3 640/905/1280, UR5e 1280). `results/summary/stall_diagnosis.md` Addendum 2.
+- α ∈ {1,2,4,8,16} × L ∈ {0.1,0.2,0.3}, PIC + servo, both robots, orientation none/hold (`var_speed_L.yaml`, T_max 10 s): PIC 60/60 converged, torque limit binds in 1 PIC run (FR3 α=16 L=0.3, joint 5, 1.06 s).
+- UR5e servo on Cshape_bottom: domain exit at 0.206 s (initial sag 8.7 mm vs 5.4 % margin); with `gravity_ff` exit at 4.4 s.
+- Torque-limit sweep for FR3 and UR5e (`torque_limit.yaml`, ×1/0.5/0.25).
+- Full matrix re-run (456 runs, `--no-plots`) with servo `qacc` recording and jerk columns; the 312 earlier cells reproduce exactly (classes and final distances). Superseded scratch run directories were deleted (git-ignored, not historic results).
+- Commit identity: commits of this request are authored as `Philipp Maas <philipp.maas@tum.de>`; the five earlier commits of this branch carry the author `kiro` (not rewritten, no force-push).
+- Tests: see the final command output in the hand-over message.

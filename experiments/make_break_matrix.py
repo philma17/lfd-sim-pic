@@ -35,6 +35,7 @@ VARIATIONS = [  # (tag, display name, level order)
     ("var_mass", "mass, nominal g-comp", ["mass0.5", "mass1.5", "mass2"]),
     ("var_mass_truecomp", "mass, true g-comp", ["mass0.5", "mass1.5", "mass2"]),
     ("var_inertia", "inertia", ["inertia0.5", "inertia1.5", "inertia2"]),
+    ("torque_limit", "torque limit", ["tau1.0", "tau0.5", "tau0.25"]),
 ]
 COMBOS = [("FR3", "none"), ("FR3", "hold"), ("UR5e", "none"), ("UR5e", "hold")]
 CLASS_COLOR = {"converged": "#b7e4c7", "slow": "#ffe8a3", "stalled": "#ffd6a5", "saturated": "#ffadad",
@@ -88,7 +89,10 @@ def main(argv=None) -> int:
             "peak_cmd_torque_ratio", "peak_applied_torque_ratio", "saturated_fraction", "peak_qd_ratio_to_limit",
             "min_limit_margin_pct", "sigma_min_Jp_start", "sigma_min_Jp_min", "cond_Jp_start", "cond_Jp_max",
             "sigma_min_J6_min", "cond_J6_max", "max_ori_err_rad", "null_dim", "null_drift_max_rad",
-            "clearance_min_m", "tank_s_min_J", "tank_s_max_J", "W_dW_max_J"]
+            "clearance_min_m", "tank_s_min_J", "tank_s_max_J", "W_dW_max_J",
+            # Savitzky-Golay derived jerk (window 0.05 s, order 3) and acceleration; direct MuJoCo qacc (PIC and servo)
+            "d_tcp_jerk_peak_m_s3", "d_qddd_peak_rad_s3", "d_qddd_peak_after_startup_rad_s3", "d_qdd_peak_rad_s2",
+            "qacc_direct_peak_after_startup_rad_s2"]
     with open(os.path.join(a.out, "matrix_long.csv"), "w", newline="", encoding="utf-8") as fh:
         w = csv.writer(fh)
         w.writerow(["variation_tag", "level", "robot", "orientation", "controller", "first_limit", "first_limit_t_s",
@@ -161,6 +165,81 @@ def main(argv=None) -> int:
             w = csv.DictWriter(fh, fieldnames=list(srows[0]))
             w.writeheader()
             w.writerows(srows)
+
+    # ---- torque-limit sweep (x1, x0.5, x0.25 of the documented limits) ---------
+    tl = [r for r in rows if r["tag"] == "torque_limit"]
+    if tl:
+        with open(os.path.join(a.out, "torque_limit_sweep.csv"), "w", newline="", encoding="utf-8") as fh:
+            w = csv.writer(fh)
+            w.writerow(["robot", "orientation", "controller", "limit_scale", "class", "first_saturation_joint",
+                        "first_saturation_t_s", "saturated_fraction", "saturated_steps_per_joint",
+                        "peak_cmd_torque_ratio_of_scaled_limit", "peak_applied_torque_ratio_of_scaled_limit",
+                        "final_dist_m", "first_limit_overall"])
+            for r in sorted(tl, key=lambda r: (r["robot"], r["orientation"], r["controller"], r["label"])):
+                m = r["m"]
+                w.writerow([r["robot"], r["orientation"], r["controller"], r["label"].replace("tau", ""),
+                            m["failure_class"], m["first_saturation"]["joint"], m["first_saturation"]["t_s"],
+                            m["saturated_fraction"], ";".join(str(x) for x in m["saturated_steps_per_joint"]),
+                            m["peak_cmd_torque_ratio"], m["peak_applied_torque_ratio"], m["final_dist_m"],
+                            m["first_violation"]["limit"]])
+
+    # ---- alpha x L: where does the torque limit bind first? -------------------
+    sl = [r for r in rows if r["tag"] == "var_speed_L"]
+    if sl:
+        out = []
+        for r in sl:
+            m = r["m"]
+            al, L = r["label"].split("_L")
+            fs = m["first_saturation"]
+            out.append({"robot": r["robot"], "orientation": r["orientation"], "controller": r["controller"],
+                        "alpha": float(al[1:]), "L_m": float(L), "class": m["failure_class"],
+                        "first_saturation_joint": fs["joint"], "first_saturation_t_s": fs["t_s"],
+                        "first_limit_overall": m["first_violation"]["limit"],
+                        "first_limit_overall_t_s": m["first_violation"]["t_s"],
+                        "first_limit_overall_joint": m["first_violation"]["joint"],
+                        "saturated_fraction": m["saturated_fraction"],
+                        "peak_cmd_torque_ratio": m["peak_cmd_torque_ratio"],
+                        "peak_applied_torque_ratio": m["peak_applied_torque_ratio"],
+                        "saturated_steps_per_joint": ";".join(str(x) for x in m["saturated_steps_per_joint"]),
+                        "tcp_speed_peak_m_s": m["tcp_speed_peak_m_s"], "final_dist_m": m["final_dist_m"],
+                        "d_tcp_jerk_peak_after_startup_m_s3": m["d_tcp_jerk_peak_after_startup_m_s3"],
+                        "qacc_direct_peak_rad_s2": m.get("qacc_direct_peak_rad_s2")})
+        out.sort(key=lambda x: (x["robot"], x["orientation"], x["controller"], x["L_m"], x["alpha"]))
+        with open(os.path.join(a.out, "speed_L_torque_binding.csv"), "w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(out[0]))
+            w.writeheader()
+            for o in out:
+                w.writerow(o)
+        fig, axs = plt.subplots(2, 4, figsize=(17, 7.5), layout="constrained")
+        alphas, Ls = [1, 2, 4, 8, 16], [0.1, 0.2, 0.3]
+        k = 0
+        for c in ("pic", "servo"):
+            for rb in ("FR3", "UR5e"):
+                for o in ("none", "hold"):
+                    ax = axs.flat[k]
+                    k += 1
+                    ax.set_xticks(range(len(alphas)), [f"{x:g}" for x in alphas])
+                    ax.set_yticks(range(len(Ls)), [f"{x:g}" for x in Ls])
+                    ax.set_xlim(-0.5, len(alphas) - 0.5)
+                    ax.set_ylim(-0.5, len(Ls) - 0.5)
+                    for i, L in enumerate(Ls):
+                        for j, al in enumerate(alphas):
+                            q = [x for x in out if (x["robot"], x["orientation"], x["controller"], x["alpha"], x["L_m"]) == (rb, o, c, float(al), L)]
+                            if not q:
+                                continue
+                            q = q[0]
+                            ax.add_patch(plt.Rectangle((j - 0.5, i - 0.5), 1, 1, color=CLASS_COLOR.get(q["class"], "#fff"), ec="k", lw=0.5))
+                            if q["first_saturation_joint"]:
+                                t = f"{q['class']}\nsat j{q['first_saturation_joint']}\n@{q['first_saturation_t_s']:.2f}s"
+                            else:
+                                t = f"{q['class']}\nno sat."
+                            ax.text(j, i, t, ha="center", va="center", fontsize=6)
+                    ax.set_title(f"{rb} {c} orientation={o}", fontsize=9)
+                    ax.set_xlabel("alpha")
+                    ax.set_ylabel("L [m]")
+        fig.suptitle("Documented torque limit: first saturated joint and time, alpha x L (friction x0, paper gains, T_max 10 s; single start)", fontsize=10)
+        fig.savefig(os.path.join(a.out, "speed_L_torque_binding.png"), dpi=110)
+        plt.close(fig)
 
     # ---- direct FR3 vs UR5e comparison plots ------------------------------
     def load(r):

@@ -37,3 +37,9 @@ inertia,inertia1.5,servo,converged,converged,converged,converged,none,none,none,
 inertia,inertia1.5,pic,converged,converged,converged,converged,none,none,none,none
 inertia,inertia2,servo,converged,converged,converged,converged,none,none,none,none
 inertia,inertia2,pic,converged,converged,converged,converged,none,none,none,none
+torque limit,tau1.0,servo,converged,converged,converged,converged,none,none,none,none
+torque limit,tau1.0,pic,converged,converged,converged,converged,none,none,none,none
+torque limit,tau0.5,servo,converged,converged,converged,converged,none,none,none,none
+torque limit,tau0.5,pic,converged,converged,converged,converged,none,none,none,none
+torque limit,tau0.25,servo,saturated,converged,converged,converged,torque_saturation j2 @3.32s,none,none,none
+torque limit,tau0.25,pic,saturated,converged,converged,converged,torque_saturation j2 @3.61s,none,none,none

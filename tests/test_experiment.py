@@ -227,3 +227,26 @@ class TestRunner(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestQaccRecorder(unittest.TestCase):
+    def test_servo_qacc_recorded_without_changing_the_simulation(self):
+        from common import sim_dynamic
+        from pic.experiment import execute_controller
+        cfg = copy.deepcopy(CFG)
+        cfg["plant"] = {"dof_frictionloss_scale": 0.0}
+        cfg["sim"]["T_max"] = 1.0
+        import mujoco
+        step_before = mujoco.mj_step
+        case = build_case(cfg)
+        plain = sim_dynamic.run(case.robot, case.ds, case.emb, case.x0_n, case.rate, case.tgt, case.sp,
+                                q_start=case.q_start, n_substeps=1, tau_limit=case.tau_limit)
+        rec = execute_controller("servo", case, cfg)
+        np.testing.assert_array_equal(rec["traj"]["Q"], plain["traj"]["Q"])       # bit-identical states
+        self.assertEqual(rec["traj"]["qacc"].shape, (500, 7))
+        self.assertTrue(np.all(np.isfinite(rec["traj"]["qacc"])))
+        # qacc is consistent with the stored velocities: dqd/dt over one step ~ qacc (implicit integrator: loose check)
+        qd = rec["traj"]["QD"]
+        fd = np.diff(qd, axis=0) / 0.002
+        self.assertLess(np.median(np.abs(fd[10:] - rec["traj"]["qacc"][10:])) , 1e-2 * max(1.0, np.abs(fd).max()))
+        self.assertIs(mujoco.mj_step, step_before)                                 # patch removed after the run
