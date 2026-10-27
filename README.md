@@ -4,6 +4,11 @@ First prototype of Passive Interaction Control with Dynamical Systems (PIC-DS, K
 RA-L 2016) as an execution mode in MuJoCo: **FR3 only, 3D TCP position task, LASA/Sine**, compared
 with the baseline joint position servo. No UR5e, no orientation control, no sweeps, no multistart.
 
+> **Experiment workflow (config-driven runs, data, plots, reports):** see
+> [`HOWTO_EXPERIMENTS.md`](HOWTO_EXPERIMENTS.md) (German; includes Windows installation).
+> Quick start: `python -B experiments/run_experiment.py nominal_fr3`.
+> `experiments/run_pic.py` below is the original script and writes to `results/pic/`.
+
 `/home/philipp/lfd_baseline` is only a reference (commit `a06ed55`, never modified).
 The required S2NNDS `Sine` model and the FR3 MuJoCo-Menagerie model are included
 under `vendor/`. The upstream source repositories and revisions are documented

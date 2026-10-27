@@ -1,0 +1,11 @@
+# NOMINAL FR3 case: unmodified Menagerie plant (friction x1), alpha = 1, documented torque limits.
+# Reproduces the historical single-start cell (results/pic/metrics.json, friction scale 1).
+# Expected (historical, EXPERIMENT_LOG.md): servo converges (2.0e-7 m, t_reach 6.21 s);
+# PIC-DS does NOT converge (stiction, final error 94.1 mm) -> failure class "stalled".
+extends: picds.yaml
+experiment:
+  name: nominal_fr3
+  description: Nominal FR3 plant, position servo vs PIC-DS, one start, no disturbance.
+  controllers: [servo, pic]
+conditions:
+  - label: nominal

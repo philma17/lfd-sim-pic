@@ -1,0 +1,4 @@
+# generated run output (large); finished summary tables/figures are copied to results/summary/ by hand
+results/runs/
+__pycache__/
+*.pyc

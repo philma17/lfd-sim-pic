@@ -1,0 +1,16 @@
+# D. FEASIBILITY PROBE for further physics parameters (not a scientific study: one start, one run
+# per condition). Shows that gravity / mass / inertia reach the physics engine and what happens.
+# The PIC-DS gravity compensation always uses the NOMINAL model, so mass_scale != 1 and
+# gravity_scale != 1 are *unmodelled* load/gravity changes (the servo has no compensation at all).
+# Frictionless diagnostic plant so that PIC-DS can move.
+extends: picds.yaml
+plant: {dof_frictionloss_scale: 0.0}
+experiment:
+  name: physics_probe
+  description: gravity x0.5, mass x1.5, inertia x3 versus the frictionless reference.
+  controllers: [servo, pic]
+conditions:
+  - {label: reference}
+  - {label: gravity0.5, set: {plant.gravity_scale: 0.5}}
+  - {label: mass1.5, set: {plant.mass_scale: 1.5}}
+  - {label: inertia3, set: {plant.inertia_scale: 3.0}}

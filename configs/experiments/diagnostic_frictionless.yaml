@@ -1,0 +1,10 @@
+# DIAGNOSTIC plant (NOT the baseline): joint Coulomb friction switched off in memory.
+# Separates controller behaviour from stiction. Historical values: servo 6.128 s, PIC 6.924 s.
+extends: picds.yaml
+experiment:
+  name: diagnostic_frictionless
+  description: DIAGNOSTIC - dof_frictionloss = 0.
+  controllers: [servo, pic]
+conditions:
+  - label: friction0
+    set: {plant.dof_frictionloss_scale: 0.0}

@@ -1,7 +1,15 @@
 # Project state
 
-**Last updated:** 2026-10-22
+**Last updated:** 2026-10-26
 **Latest log entry:** [Current state audit](EXPERIMENT_LOG.md#current-state-audit-2026-10-22)
+
+## Update 2026-10-26 — experiment framework (uncommitted)
+
+- **Corrections to the 2026-10-22 text below:** the committed checkout (`75cbb4e`) does not contain `common/experiment_manifest.py`, `audit/`, `tests/test_provenance.py` or a `ds_speed_factor` implementation (apparently uncommitted local changes at that time); it has 19 tests, now 35. Working directory in the cloud session: `/projects/sandbox/lfd-sim-pic`.
+- **New (uncommitted, awaiting approval):** config-driven runner `experiments/run_experiment.py` (+ `compare_runs.py`, `plot_run.py`), `pic/{plant,analysis,plots,experiment}.py`, `configs/experiments/*.yaml`, `tests/test_experiment.py`, `HOWTO_EXPERIMENTS.md`, `requirements-tested.txt`; `pic/sim_pic.py:build_case` extended. Outputs go to `results/runs/` and `results/compare/` (new run directories; `results/pic/` untouched).
+- **Support matrix changes:** `ds_speed_factor` (α) implemented and run (0.5/1/2); friction, damping, gravity, mass, inertia and torque-limit scales implemented, unit-tested for physical effect, and run once each (see `EXPERIMENT_LOG.md`, `HOWTO_EXPERIMENTS.md` §8). Not implemented: COM offsets, armature, gravity direction. UR5e: executes in a throwaway test, **not integrated**.
+- **Tests:** 35 run; 33 pass, 1 skipped, 1 fails (`test_vendored_files_unchanged`). The cause is now localized: `ds.py` and `robots.py` differ from `a06ed55` only in path defaults (+ `MENAGERIE_COMMIT` constant in `robots.py`). Hashes were not changed.
+- **Open:** Windows execution unverified; provenance fix needs approval; baseline-vs-vendored Menagerie revision difference (`d7b481b` vs `cda5236`) not investigated; UR5e integration; repeatability/multistart; `RESEARCH_PLAN.md` unchanged (plan not altered).
 
 ## Objective
 

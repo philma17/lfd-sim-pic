@@ -1,0 +1,16 @@
+# A. Speed scaling  x_dot = alpha * f(x).  Only alpha changes between conditions.
+# T_max is the SAME (20 s) for all alpha so that alpha = 0.5 is not cut off by a shorter time
+# budget (at alpha = 1 the ideal DS needs ~6 s, so alpha = 0.5 needs ~12 s).
+# Plant: friction x0 (DIAGNOSTIC) so that PIC-DS can move at all; use
+#   --set plant.dof_frictionloss_scale=1.0  to repeat on the nominal plant.
+extends: picds.yaml
+sim: {T_max: 20.0}
+plant: {dof_frictionloss_scale: 0.0}
+experiment:
+  name: speed_scaling
+  description: DS speed factor alpha = 0.5 / 1.0 / 2.0, frictionless diagnostic plant.
+  controllers: [servo, pic]
+conditions:
+  - {label: alpha0.5, set: {ds_speed_factor: 0.5}}
+  - {label: alpha1.0, set: {ds_speed_factor: 1.0}}
+  - {label: alpha2.0, set: {ds_speed_factor: 2.0}}

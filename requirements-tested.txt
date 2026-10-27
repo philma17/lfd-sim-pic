@@ -1,0 +1,14 @@
+# Versions with which the tests and all experiments in EXPERIMENT_LOG.md were run
+# (Linux x86_64, Python 3.11.15, 2026-10-26). Windows has NOT been tested by the author of this file.
+# Use this file if `pip install -r requirements.txt` (unpinned, newest versions) gives problems:
+#     python -m pip install -r requirements-tested.txt
+numpy==2.4.6
+scipy==1.17.1
+matplotlib==3.11.2
+PyYAML==6.0.3
+mujoco==3.17.0
+onnx==1.23.2
+pyLasaDataset==0.2.1
+# torch was installed from the CPU wheel index (2.14.1+cpu). On Windows plain `pip install torch`
+# installs a CPU build as well; any recent 2.x version should work for loading model_f.pth.
+torch

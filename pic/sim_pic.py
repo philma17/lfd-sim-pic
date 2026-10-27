@@ -29,13 +29,14 @@ import mujoco
 import numpy as np
 
 from common.ds import PlanarEmbedding
-from common.ik import Target, multistart_ik
+from common.ik import IKResult, Target, multistart_ik, task_rows, task_sigma_min
 from common.robots import ROBOTS, Robot
 from common.scenario import build_ds, sim_params
 from common.sim_dynamic import (TAU_MAX_DOC, check_dims, gravity_torque, ideal_rollout,
                                 tracking_metrics)
 
 from .controller import PICController, PICParams
+from .plant import apply_plant, resolve_plant, torque_limit
 
 
 @dataclass
@@ -52,27 +53,42 @@ class Case:
     x0_n: np.ndarray
     q_start: np.ndarray
     ik: object
+    # --- added for configurable experiments (all have defaults, older callers unaffected) ---
+    robot_nominal: Robot | None = None      # unmodified model: source of the g(q) compensation
+    tau_limit: np.ndarray | None = None     # torque limit used for clipping/reporting [Nm]
+    speed_factor: float = 1.0               # alpha in  x_dot = alpha * f(x)
+    plant_report: dict | None = None        # requested + applied plant parameters
 
 
-def build_case(cfg: dict, friction_scale: float | None = None) -> Case:
+def build_case(cfg: dict, friction_scale: float | None = None,
+               speed_factor: float | None = None) -> Case:
     """Same start procedure as common.sim.run (multi-start IK on the ideal-rollout start point),
     so q_start is the baseline start configuration of the FR3 pos cell.
 
-    friction_scale: multiplies model.dof_frictionloss IN MEMORY (the MJCF is never written).
-    None -> cfg["plant"]["dof_frictionloss_scale"]. 1.0 = unmodified Menagerie plant (the one
-    the baseline used); anything else is a DIAGNOSTIC plant and is reported as such."""
+    Configurable (all optional, defaults reproduce the historical cell):
+      cfg["ds_speed_factor"]  alpha > 0: x_dot = alpha * f(x). Applied to the DS time rate, which
+                              scales BOTH the commanded velocity (v_peak = rate*L) and the ideal
+                              reference rollout, so geometry is unchanged and only timing scales.
+      cfg["plant"]            see pic.plant (friction, damping, gravity, mass, inertia, torque limit)
+      cfg["task"]["q_start_rad"]  explicit start configuration instead of multi-start IK
+    friction_scale / speed_factor arguments override the cfg values (kept for older callers).
+    1.0 friction = unmodified Menagerie plant (the baseline); anything else is a DIAGNOSTIC plant."""
     if cfg["robot"] != "FR3":
         raise NotImplementedError("first PIC step supports the FR3 only")
     if cfg["task"]["mode"] != "pos":
         raise NotImplementedError("first PIC step: position task only (no orientation control)")
+    plant = dict(cfg.get("plant") or {})
+    if friction_scale is not None:
+        plant["dof_frictionloss_scale"] = float(friction_scale)
+    plant = resolve_plant(plant)
     robot = Robot(ROBOTS["FR3"])
-    fs = float(cfg.get("plant", {}).get("dof_frictionloss_scale", 1.0)
-               if friction_scale is None else friction_scale)
-    if fs < 0:
-        raise ValueError("friction scale must be >= 0")
-    robot.model.dof_frictionloss[:] *= fs
-    robot.friction_scale = fs
+    plant_report = apply_plant(robot, plant)
+    robot_nominal = Robot(ROBOTS["FR3"])               # never modified
+    alpha = float(cfg.get("ds_speed_factor", 1.0) if speed_factor is None else speed_factor)
+    if not (np.isfinite(alpha) and alpha > 0):
+        raise ValueError(f"ds_speed_factor must be finite and > 0, got {alpha}")
     ds, sc, rate = build_ds(cfg)
+    rate = rate * alpha
     sp = sim_params(cfg)
     if not np.isclose(sp.dt, robot.model.opt.timestep):
         raise ValueError(f"sim.dt {sp.dt} != model timestep {robot.model.opt.timestep}")
@@ -84,11 +100,27 @@ def build_case(cfg: dict, friction_scale: float | None = None) -> Case:
     x0 = np.asarray(sc.x0_n, float)
     tgt = Target("pos")
     p0 = emb.to_world(x0)
-    ikr = multistart_ik(robot, p0, tgt, robot.q_home, sp.n_starts, sp.seed, sp.start_criterion,
-                        free=None, min_margin_pct=sp.start_min_margin_pct)
-    if not ikr.converged:
-        raise RuntimeError(f"start IK did not converge (pos err {ikr.pos_err:.3e} m)")
-    return Case(cfg, robot, ds, sc, rate, sp, emb, tgt, x0, ikr.q.copy(), ikr)
+    if t.get("q_start_rad") is not None:
+        q0 = np.asarray(t["q_start_rad"], float)
+        if q0.shape != (robot.n,):
+            raise ValueError(f"task.q_start_rad needs {robot.n} values")
+        if np.any(q0 < robot.q_min) or np.any(q0 > robot.q_max):
+            raise ValueError("task.q_start_rad violates the joint position limits")
+        p_fk, R_fk = robot.fk(q0)
+        _, _, oe0 = task_rows(robot.jac(), R_fk, tgt, p0 - p_fk, 1.0)
+        ikr = IKResult(q0, float(np.linalg.norm(p0 - p_fk)), float(oe0), True, 1, 0,
+                       task_sigma_min(robot, q0, tgt, np.ones(robot.n, bool)),
+                       float(robot.limit_margin_pct(q0).min()), True)
+    else:
+        ikr = multistart_ik(robot, p0, tgt, robot.q_home, sp.n_starts, sp.seed,
+                            sp.start_criterion, free=None,
+                            min_margin_pct=sp.start_min_margin_pct)
+        if not ikr.converged:
+            raise RuntimeError(f"start IK did not converge (pos err {ikr.pos_err:.3e} m)")
+    return Case(cfg, robot, ds, sc, rate, sp, emb, tgt, x0, ikr.q.copy(), ikr,
+                robot_nominal=robot_nominal,
+                tau_limit=torque_limit(robot.spec.name, plant["torque_limit_scale"]),
+                speed_factor=alpha, plant_report=plant_report)
 
 
 def null_projector(Jp: np.ndarray, rtol: float = 1e-6):
@@ -133,8 +165,13 @@ def run(case: Case, params: PICParams, *, null_d_q: float = 0.0, tau_limit=None,
     P_id = emb.to_world(X_id)
     v_peak = case.rate * emb.L
     goal = emb.to_world(np.zeros(dim))
-    tau_lim = (TAU_MAX_DOC[robot.spec.name][0] if tau_limit is None
-               else np.asarray(tau_limit, float))
+    if tau_limit is not None:
+        tau_lim = np.asarray(tau_limit, float)
+    elif case.tau_limit is not None:
+        tau_lim = np.asarray(case.tau_limit, float)
+    else:
+        tau_lim = TAU_MAX_DOC[robot.spec.name][0]
+    g_robot = case.robot_nominal if case.robot_nominal is not None else robot
     pulses = list(pulses)
     q0 = np.asarray(case.q_start if q_start is None else q_start, float)
 
@@ -185,7 +222,7 @@ def run(case: Case, params: PICParams, *, null_d_q: float = 0.0, tau_limit=None,
                 S["s"][k] = ctrl.s
                 break
             out = ctrl.step(xd, f, dt)
-            g = gravity_torque(robot, q)
+            g = gravity_torque(g_robot, q)       # compensation uses the NOMINAL model
             Nproj, nd = null_projector(Jp)
             tau_null = -null_d_q * (Nproj @ qd) if (null_d_q > 0 and nd > 0) else np.zeros(n)
             tau_cmd = g + Jp.T @ out["F"] + tau_null

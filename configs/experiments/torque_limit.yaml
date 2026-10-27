@@ -1,0 +1,14 @@
+# C. Torque limits. Documented FR3 limits 87/87/87/87/12/12/12 Nm x scale. Enforced for PIC-DS
+# by clipping and for the servo through actuator forcerange (see pic/plant.py).
+# Frictionless diagnostic plant so that PIC-DS moves; the interesting effect is saturation.
+# Gravity torque at the start pose is up to 19 Nm (joint 4), i.e. 0.22 of the limit.
+extends: picds.yaml
+plant: {dof_frictionloss_scale: 0.0}
+experiment:
+  name: torque_limit
+  description: Torque limit scale 1.0 / 0.5 / 0.25 (frictionless diagnostic plant).
+  controllers: [servo, pic]
+conditions:
+  - {label: tau1.0, set: {plant.torque_limit_scale: 1.0}}
+  - {label: tau0.5, set: {plant.torque_limit_scale: 0.5}}
+  - {label: tau0.25, set: {plant.torque_limit_scale: 0.25}}
